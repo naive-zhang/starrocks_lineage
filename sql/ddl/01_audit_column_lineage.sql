@@ -9,6 +9,8 @@
 -- Sort key : (target_db, target_table, target_column) so "where does this column come from" is a prefix-index scan.
 -- Counters : exec_count / first_seen_time are merged by the pipeline through audit_column_lineage_stage
 --            (see 02_audit_column_lineage_stage.sql) because a Primary Key table cannot SUM on upsert.
+-- Replay   : last_batch_id makes the merge idempotent: a batch that was already merged is skipped by the merge
+--            statement itself, so a crash between merge and merge log cannot double exec_count.
 -- =====================================================================================================================
 CREATE TABLE IF NOT EXISTS audit_lineage_db.audit_column_lineage (
     edge_id          VARCHAR(64)    NOT NULL COMMENT "sha256(target4, source4, lineage_type) - physical primary key",
@@ -30,6 +32,7 @@ CREATE TABLE IF NOT EXISTS audit_lineage_db.audit_column_lineage (
     first_seen_time  DATETIME       NOT NULL COMMENT "audit timestamp of the first statement producing the edge",
     last_seen_time   DATETIME       NOT NULL COMMENT "audit timestamp of the last statement producing the edge",
     exec_count       BIGINT         NOT NULL DEFAULT "0" COMMENT "number of successful statements producing the edge",
+    last_batch_id    VARCHAR(64)    NULL     COMMENT "pipeline batch of the last merge - replay guard (Stage 4 R4-01)",
     update_time      DATETIME       NOT NULL COMMENT "wall clock time of the last merge"
 ) ENGINE = OLAP
 PRIMARY KEY (edge_id)

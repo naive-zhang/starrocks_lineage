@@ -102,6 +102,8 @@ flowchart TB
 | `04_audit_user_dict.sql` | `audit_user_dict` | PRIMARY KEY(`user_name`) | 稠密且无碰撞的 `user_id`，用于精确 UV 位图（见 R-04） |
 | `05_audit_lineage_sync_checkpoint.sql` | `audit_lineage_sync_checkpoint`, `audit_lineage_merge_log` | PRIMARY KEY | `(timestamp, queryId)` 水位；单写者租约；按批次幂等合并 |
 
+> 注（Stage 4 更新）：`02` 中按 `merge_log` 判重的设计已被 **R4-01** 取代，改为在血缘表上增加 `last_batch_id` 列，由合并语句自身防重；`05` 中增加了批次意图三列（**R4-02**）。详见 `docs/stage4-pipeline.md`。
+
 **用量表加载契约**：每个 `(stat_hour, column, user)` 发出**一行**，内容是该用户在该小时、该列上的小计。SUM 指标逐行相加即得列总量；每行带一个单用户的 bitmap 和 HLL，二者合并后就是该列的 UV。这样不需要在客户端序列化 bitmap，跨小时、天、月上卷时 UV 也不会失真。
 
 **业务查询**（`sql/query/business_queries.sql`）：

@@ -25,6 +25,7 @@ mvn clean test
 | `src/main/java/com/starrocks/lineage/metadata/` | `MetadataProvider` with JDBC (Caffeine-cached) and in-memory implementations |
 | `src/main/java/com/starrocks/lineage/scope/` | Symbol table: `Scope` / `ScopeStack` / `RelationDescriptor` / `RelationField` / `FieldLineage` / `ExpressionSourceTracker` |
 | `src/main/java/com/starrocks/lineage/analyzer/` | `StarRocksAuditAstVisitor` (79 official visit methods) and the `StarRocksSqlAnalyzer` facade |
+| `src/main/java/com/starrocks/lineage/pipeline/` | Incremental `AuditLogSyncPipeline`: keyset audit reader, checkpoint / lease / batch intent, hourly and lineage pre-aggregation, user dictionary, Stream Load + guarded merge sink |
 | `sql/ddl/` | StarRocks 3.1 DDL of every target table |
 | `sql/query/` | Standard business queries |
 | `docs/` | Stage design documents and architect review logs |
@@ -36,4 +37,21 @@ mvn clean test
 | 1 | Architecture, DDL, Maven, `.g4` compatibility base, domain model, metadata | ✅ [docs/stage1-architecture.md](docs/stage1-architecture.md) |
 | 2 | Symbol table and scope stack engine | ✅ [docs/stage2-scope-engine.md](docs/stage2-scope-engine.md) |
 | 3 | `StarRocksAuditAstVisitor` and `StarRocksSqlAnalyzer` | ✅ [docs/stage3-ast-visitor.md](docs/stage3-ast-visitor.md) |
-| 4 | Incremental pipeline, hourly pre-aggregation, acceptance tests | pending |
+| 4 | Incremental pipeline, hourly pre-aggregation, acceptance tests | ✅ [docs/stage4-pipeline.md](docs/stage4-pipeline.md) |
+
+## Running the pipeline
+
+```java
+HikariDataSource ds = ...; // jdbc:mysql://fe-host:9030
+MetadataProvider metadata = new JdbcStarRocksMetadataProvider(ds);
+StreamLoadClient streamLoad = new StreamLoadClient(URI.create("http://fe-host:8030"), "loader", "***",
+        Duration.ofMinutes(5));
+AuditLogSyncPipeline pipeline = new AuditLogSyncPipeline(
+        PipelineConfig.builder("audit_lineage", hostAndPid).build(),
+        new JdbcAuditLogSource(ds), new JdbcCheckpointStore(ds),
+        new StarRocksSink(ds, streamLoad, "audit_lineage_db"),
+        new StarRocksSqlAnalyzer(metadata), metadata, Clock.systemDefaultZone());
+pipeline.start(Duration.ofMinutes(1));
+```
+
+Create the tables first with `sql/ddl/00..05`.

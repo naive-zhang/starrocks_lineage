@@ -5,6 +5,9 @@
 --                  AND `timestamp` <  NOW() - INTERVAL <late_arrival_seconds> SECOND
 --     expressed as  `timestamp` > t OR (`timestamp` = t AND queryId > q)  because StarRocks 3.1 has no row compare.
 --   owner / lease_expire_time : only the owner with a live lease may advance the checkpoint (single writer).
+--   pending_* : intent of the batch being written (id + end watermark). Saved before any sink write and cleared by
+--     the commit; a failed cycle leaves it, and the next cycle replays exactly (watermark, pending_end] under the
+--     same batch id, which keeps Stream Load labels and the lineage merge guard exactly-once (Stage 4 R4-02).
 -- =====================================================================================================================
 CREATE TABLE IF NOT EXISTS audit_lineage_db.audit_lineage_sync_checkpoint (
     pipeline_name       VARCHAR(64)    NOT NULL,
@@ -13,6 +16,9 @@ CREATE TABLE IF NOT EXISTS audit_lineage_db.audit_lineage_sync_checkpoint (
     owner               VARCHAR(128)   NOT NULL,
     lease_expire_time   DATETIME       NOT NULL,
     processed_rows      BIGINT         NOT NULL DEFAULT "0",
+    pending_batch_id    VARCHAR(64)    NULL,
+    pending_end_time    DATETIME       NULL,
+    pending_end_query_id VARCHAR(64)   NULL,
     update_time         DATETIME       NOT NULL
 ) ENGINE = OLAP
 PRIMARY KEY (pipeline_name)

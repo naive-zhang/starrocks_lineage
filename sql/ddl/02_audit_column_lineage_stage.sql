@@ -1,10 +1,10 @@
 -- =====================================================================================================================
 -- Staging table for lineage edges of one pipeline batch (Stream Load target).
 --   * DUPLICATE KEY, partitioned by batch day, 3-day TTL through dynamic partitioning.
---   * The pipeline Stream-Loads one batch (pre-aggregated per edge_id in memory), then runs the MERGE statement
---     below in one transaction-free INSERT ... SELECT. Re-running the merge for the same batch_id is prevented by the
---     checkpoint table (03_audit_lineage_sync_checkpoint.sql): the checkpoint only advances after a successful merge,
---     and the merge of a batch is skipped when audit_lineage_merge_log already contains its batch_id.
+--   * The pipeline Stream-Loads one batch (pre-aggregated per edge_id in memory) with the label
+--     <batch_id>_stage_<n> (a retried load is rejected as "Label Already Exists"), then runs the MERGE below.
+--   * The MERGE is a single atomic INSERT ... SELECT guarded by last_batch_id <> batch_id, so replaying a batch
+--     after a crash writes nothing (exactly-once without multi-statement transactions).
 -- =====================================================================================================================
 CREATE TABLE IF NOT EXISTS audit_lineage_db.audit_column_lineage_stage (
     batch_day        DATE           NOT NULL,
@@ -43,24 +43,25 @@ PROPERTIES (
 );
 
 -- ---------------------------------------------------------------------------------------------------------------------
--- MERGE of one staged batch into audit_column_lineage (executed by the pipeline, ${batch_id} bound as a parameter).
--- exec_count is accumulated, first_seen_time keeps the minimum, last_* columns follow the newest statement.
+-- MERGE of one staged batch into audit_column_lineage (executed by StarRocksSink#mergeLineage; ? = update_time,
+-- batch_id, batch_id). exec_count accumulates, first_seen_time keeps the minimum, last_* follow the newest statement.
 -- ---------------------------------------------------------------------------------------------------------------------
--- INSERT INTO audit_lineage_db.audit_column_lineage
--- SELECT s.edge_id,
---        s.target_catalog, s.target_db, s.target_table, s.target_column,
---        s.source_catalog, s.source_db, s.source_table, s.source_column,
---        s.lineage_type,
---        IF(o.edge_id IS NULL OR s.last_seen_time >= o.last_seen_time, s.transform_type, o.transform_type),
---        IF(o.edge_id IS NULL OR s.last_seen_time >= o.last_seen_time, s.transform_expr, o.transform_expr),
---        IF(o.edge_id IS NULL OR s.last_seen_time >= o.last_seen_time, s.stmt_type,      o.stmt_type),
---        IF(o.edge_id IS NULL OR s.last_seen_time >= o.last_seen_time, s.sql_digest,     o.sql_digest),
---        IF(o.edge_id IS NULL OR s.last_seen_time >= o.last_seen_time, s.last_query_id,  o.last_query_id),
---        IF(o.edge_id IS NULL OR s.last_seen_time >= o.last_seen_time, s.last_exec_user, o.last_exec_user),
---        IF(o.edge_id IS NULL, s.first_seen_time, LEAST(o.first_seen_time, s.first_seen_time)),
---        IF(o.edge_id IS NULL, s.last_seen_time,  GREATEST(o.last_seen_time, s.last_seen_time)),
---        IFNULL(o.exec_count, 0) + s.exec_count,
---        NOW()
+-- INSERT INTO audit_lineage_db.audit_column_lineage (edge_id, target_catalog, target_db, target_table, target_column,
+--        source_catalog, source_db, source_table, source_column, lineage_type, transform_type, transform_expr,
+--        stmt_type, sql_digest, last_query_id, last_exec_user, first_seen_time, last_seen_time, exec_count,
+--        last_batch_id, update_time)
+-- SELECT s.edge_id, s.target_catalog, s.target_db, s.target_table, s.target_column,
+--        s.source_catalog, s.source_db, s.source_table, s.source_column, s.lineage_type,
+--        CASE WHEN o.edge_id IS NULL OR s.last_seen_time >= o.last_seen_time THEN s.transform_type ELSE o.transform_type END,
+--        CASE WHEN o.edge_id IS NULL OR s.last_seen_time >= o.last_seen_time THEN s.transform_expr ELSE o.transform_expr END,
+--        CASE WHEN o.edge_id IS NULL OR s.last_seen_time >= o.last_seen_time THEN s.stmt_type      ELSE o.stmt_type      END,
+--        CASE WHEN o.edge_id IS NULL OR s.last_seen_time >= o.last_seen_time THEN s.sql_digest     ELSE o.sql_digest     END,
+--        CASE WHEN o.edge_id IS NULL OR s.last_seen_time >= o.last_seen_time THEN s.last_query_id  ELSE o.last_query_id  END,
+--        CASE WHEN o.edge_id IS NULL OR s.last_seen_time >= o.last_seen_time THEN s.last_exec_user ELSE o.last_exec_user END,
+--        CASE WHEN o.edge_id IS NULL OR s.first_seen_time < o.first_seen_time THEN s.first_seen_time ELSE o.first_seen_time END,
+--        CASE WHEN o.edge_id IS NULL OR s.last_seen_time >= o.last_seen_time THEN s.last_seen_time ELSE o.last_seen_time END,
+--        COALESCE(o.exec_count, 0) + s.exec_count,
+--        s.batch_id, ?
 -- FROM audit_lineage_db.audit_column_lineage_stage s
 -- LEFT JOIN audit_lineage_db.audit_column_lineage o ON o.edge_id = s.edge_id
--- WHERE s.batch_id = ?;
+-- WHERE s.batch_id = ? AND (o.edge_id IS NULL OR o.last_batch_id IS NULL OR o.last_batch_id <> ?);
