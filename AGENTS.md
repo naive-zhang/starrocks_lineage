@@ -117,5 +117,3 @@
    - 通过 StarRocks Stream Load / JDBC Batch 写入两张目标表。
 2. **全面的 JUnit 5 单元测试 (`StarRocksSqlAnalyzerTest`)**：
    - 编写至少 6 个高复杂度真实 StarRocks 3.1 SQL 测试用例（多级 CTE + `UNION ALL` + 窗口函数、`INSERT INTO` 省略列名 + `*` 展开、`LATERAL UNNEST` 数组展开、Lambda 高阶函数 `array_map`、`WHERE EXISTS` 关联子查询、纯查询多子句字段命中计数与单 Query 去重验证），并使用 `Assertions` 严格断言解析出的血缘边和字段各子句计数。
-
-请现在开始输出 **【第一阶段】** 的全部内容。
