@@ -1,0 +1,2 @@
+# The ANTLR grammars must stay byte-identical to StarRocks branch-3.1 (see OfficialGrammarIntegrityTest).
+*.g4 -text
