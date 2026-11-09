@@ -102,7 +102,3 @@
   - 编写完整的 `HourlyUsageAggregator`、`AuditLogSyncPipeline` 生产代码。
   - 编写完整的 JUnit 5 测试类 `StarRocksSqlAnalyzerTest`，覆盖全部 8 类复杂 SQL（多层 CTE + 窗口 + `UNION ALL`、省略列名的 `INSERT ... SELECT t1.*`、`LATERAL UNNEST`、Lambda `array_map`、`WHERE EXISTS` 关联子查询、`CREATE MATERIALIZED VIEW`、纯查询单 SQL 多处引用同一字段的去重与子句计数验证、脏注释与管理语句过滤验证），包含精确的 `Assertions` 断言。
 - **【架构师 Review & 开发修正】**：对并发安全性、内存预聚合 Hash 冲突、单元测试断言严密性进行终审签字（Sign-off）。
-
----
-
-请现在立即启动 **【Stage 1】**，严格按照 `【首席架构师】设计 -> 【核心开发工程师】编码 -> 【首席架构师】Code Review 与开发修正` 的三步结构输出完整内容！
