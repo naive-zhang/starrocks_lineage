@@ -24,6 +24,7 @@ mvn clean test
 | `src/main/java/com/starrocks/lineage/model/` | Domain model (identifiers, lineage edges, usage stats, parse results, audit record) |
 | `src/main/java/com/starrocks/lineage/metadata/` | `MetadataProvider` with JDBC (Caffeine-cached) and in-memory implementations |
 | `src/main/java/com/starrocks/lineage/scope/` | Symbol table: `Scope` / `ScopeStack` / `RelationDescriptor` / `RelationField` / `FieldLineage` / `ExpressionSourceTracker` |
+| `src/main/java/com/starrocks/lineage/analyzer/` | `StarRocksAuditAstVisitor` (79 official visit methods) and the `StarRocksSqlAnalyzer` facade |
 | `sql/ddl/` | StarRocks 3.1 DDL of every target table |
 | `sql/query/` | Standard business queries |
 | `docs/` | Stage design documents and architect review logs |
@@ -34,5 +35,5 @@ mvn clean test
 |---|---|---|
 | 1 | Architecture, DDL, Maven, `.g4` compatibility base, domain model, metadata | ✅ [docs/stage1-architecture.md](docs/stage1-architecture.md) |
 | 2 | Symbol table and scope stack engine | ✅ [docs/stage2-scope-engine.md](docs/stage2-scope-engine.md) |
-| 3 | `StarRocksAuditAstVisitor` and `StarRocksSqlAnalyzer` | pending |
+| 3 | `StarRocksAuditAstVisitor` and `StarRocksSqlAnalyzer` | ✅ [docs/stage3-ast-visitor.md](docs/stage3-ast-visitor.md) |
 | 4 | Incremental pipeline, hourly pre-aggregation, acceptance tests | pending |

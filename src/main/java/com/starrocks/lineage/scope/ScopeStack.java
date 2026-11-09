@@ -213,6 +213,14 @@ public final class ScopeStack {
                 return alias == null ? cte.get() : cte.get().withAlias(alias);
             }
         }
+        return resolvePhysicalRelation(nameParts, alias);
+    }
+
+    /**
+     * Resolves a name as a physical table, never as a CTE (targets of INSERT / UPDATE / DELETE / CTAS, and the
+     * second step of {@link #resolveRelation}). The table is recorded in {@link #getReferencedTables()}.
+     */
+    public RelationDescriptor resolvePhysicalRelation(List<String> nameParts, String alias) {
         TableIdentifier table = TableIdentifier.resolve(nameParts, namespace);
         Optional<TableSchema> schema = metadata.getTableSchema(table);
         if (!schema.isPresent() && !Identifiers.DEFAULT_CATALOG.equals(table.getCatalog())) {

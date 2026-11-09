@@ -54,7 +54,7 @@ public final class SqlSanitizer {
      */
     public static SanitizedSql sanitize(String rawStmt) {
         if (rawStmt == null) {
-            return new SanitizedSql(null, "", "", 0);
+            return new SanitizedSql(null, "", "", 0, false);
         }
         String input = rawStmt;
         if (!input.isEmpty() && input.charAt(0) == '﻿') {
@@ -94,7 +94,7 @@ public final class SqlSanitizer {
             }
         }
         String sql = trimTrailingSemicolons(out.toString().trim());
-        return new SanitizedSql(rawStmt, sql, leadingKeyword(sql), removed);
+        return new SanitizedSql(rawStmt, sql, leadingKeyword(sql), removed, hasStatementSeparator(sql));
     }
 
     /**
@@ -151,6 +151,28 @@ public final class SqlSanitizer {
         return i;
     }
 
+    /**
+     * @return {@code true} when a {@code ;} outside literals / identifiers separates statements (comments are already
+     *         removed and trailing semicolons trimmed)
+     */
+    private static boolean hasStatementSeparator(String sql) {
+        int i = 0;
+        while (i < sql.length()) {
+            char c = sql.charAt(i);
+            if (c == '\'' || c == '"' || c == '`') {
+                i = copyQuoted(sql, i, c, new StringBuilder());
+            } else if (c == '/' && i + 2 < sql.length() && sql.charAt(i + 1) == '*' && sql.charAt(i + 2) == '+') {
+                int end = sql.indexOf("*/", i + 3);
+                i = end < 0 ? sql.length() : end + 2;
+            } else if (c == ';') {
+                return true;
+            } else {
+                i++;
+            }
+        }
+        return false;
+    }
+
     private static int skipToLineEnd(String s, int start) {
         int i = start;
         while (i < s.length() && s.charAt(i) != '\n' && s.charAt(i) != '\r') {
@@ -181,12 +203,15 @@ public final class SqlSanitizer {
         private final String sql;
         private final String leadingKeyword;
         private final int removedComments;
+        private final boolean multipleStatements;
 
-        SanitizedSql(String original, String sql, String leadingKeyword, int removedComments) {
+        SanitizedSql(String original, String sql, String leadingKeyword, int removedComments,
+                     boolean multipleStatements) {
             this.original = original;
             this.sql = Objects.requireNonNull(sql);
             this.leadingKeyword = Objects.requireNonNull(leadingKeyword);
             this.removedComments = removedComments;
+            this.multipleStatements = multipleStatements;
         }
 
         /** @return raw statement exactly as stored in the audit table (may be {@code null}) */
@@ -214,9 +239,18 @@ public final class SqlSanitizer {
             return sql.isEmpty();
         }
 
-        /** @return {@code true} when the statement is a management statement that must be skipped */
+        /** @return {@code true} when the text contains several {@code ;}-separated statements */
+        public boolean hasMultipleStatements() {
+            return multipleStatements;
+        }
+
+        /**
+         * @return {@code true} when the text is a single management statement that can be skipped without parsing;
+         *         a multi-statement text starting with e.g. {@code USE db;} is not, because a later statement may
+         *         be a query or a write
+         */
         public boolean isManagementStatement() {
-            return MANAGEMENT_KEYWORDS.contains(leadingKeyword);
+            return !multipleStatements && MANAGEMENT_KEYWORDS.contains(leadingKeyword);
         }
 
         @Override

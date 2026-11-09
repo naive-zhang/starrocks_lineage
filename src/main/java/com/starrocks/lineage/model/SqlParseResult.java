@@ -34,6 +34,7 @@ public final class SqlParseResult {
     private final Set<TableIdentifier> sourceTables;
     private final List<ColumnLineageEdge> lineageEdges;
     private final Map<ColumnIdentifier, ColumnUsageStat> columnUsages;
+    private final List<String> warnings;
 
     private SqlParseResult(Builder b) {
         this.queryId = b.queryId;
@@ -49,6 +50,7 @@ public final class SqlParseResult {
             usages.put(e.getKey(), new ColumnUsageStat(e.getKey()).mergeFrom(e.getValue()));
         }
         this.columnUsages = Collections.unmodifiableMap(usages);
+        this.warnings = Collections.unmodifiableList(new ArrayList<>(b.warnings));
         if (status == ParseStatus.SUCCESS && statementType == null) {
             throw new IllegalStateException("a successful result must carry a statement type");
         }
@@ -108,6 +110,19 @@ public final class SqlParseResult {
         return columnUsages;
     }
 
+    /**
+     * @return diagnostics of a successful but imperfect analysis (relation without metadata, unexpanded
+     *         {@code *}, column count mismatch ...), de-duplicated, in discovery order
+     */
+    public List<String> getWarnings() {
+        return warnings;
+    }
+
+    /** @return {@code true} when the result is usable but may be incomplete, see {@link #getWarnings()} */
+    public boolean isDegraded() {
+        return !warnings.isEmpty();
+    }
+
     /** @return usage of one column, if the query accessed it */
     public Optional<ColumnUsageStat> usageOf(ColumnIdentifier column) {
         return Optional.ofNullable(columnUsages.get(column));
@@ -117,6 +132,7 @@ public final class SqlParseResult {
     public String toString() {
         return "SqlParseResult{queryId=" + queryId + ", status=" + status + ", type=" + statementType
                 + ", edges=" + lineageEdges.size() + ", usages=" + columnUsages.size()
+                + (warnings.isEmpty() ? "" : ", warnings=" + warnings)
                 + (message == null ? "" : ", message=" + message) + '}';
     }
 
@@ -133,6 +149,7 @@ public final class SqlParseResult {
         private final Set<TableIdentifier> sourceTables = new LinkedHashSet<>();
         private final Map<ColumnLineageEdge, ColumnLineageEdge> edges = new LinkedHashMap<>();
         private final Map<ColumnIdentifier, ColumnUsageStat> usages = new LinkedHashMap<>();
+        private final Set<String> warnings = new LinkedHashSet<>();
 
         private Builder(String queryId) {
             this.queryId = queryId;
@@ -190,6 +207,16 @@ public final class SqlParseResult {
         public Builder addUsage(ColumnUsageStat stat) {
             usages.computeIfAbsent(stat.getColumn(), ColumnUsageStat::new).mergeFrom(stat);
             return this;
+        }
+
+        /** Adds a diagnostic; duplicates are ignored. */
+        public Builder addWarning(String warning) {
+            warnings.add(Objects.requireNonNull(warning, "warning"));
+            return this;
+        }
+
+        public StatementType getStatementType() {
+            return statementType;
         }
 
         public SqlParseResult build() {
