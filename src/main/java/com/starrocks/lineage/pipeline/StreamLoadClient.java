@@ -22,6 +22,7 @@ import java.time.Duration;
 import java.util.Base64;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.function.UnaryOperator;
 import java.util.regex.Pattern;
 
 /**
@@ -31,7 +32,13 @@ import java.util.regex.Pattern;
  *   <li>The FE answers {@code 307 Temporary Redirect} to a BE. Redirects are followed <b>manually</b> so the
  *       {@code Authorization} header and the (repeatable) body are re-sent to the BE; generic HTTP clients drop
  *       credentials on cross-host redirects.</li>
- *   <li>{@code Expect: 100-continue} is sent, as required by the StarRocks FE for stream load.</li>
+ *   <li>The {@code Location} of the redirect is the address the BE registered in the cluster (e.g.
+ *       {@code http://127.0.0.1:8040} in an all-in-one container, a pod IP in Kubernetes). When the client reaches
+ *       the cluster through NAT / port mapping, a {@code redirectRewriter} maps it to a reachable address.</li>
+ *   <li>{@code Expect: 100-continue} is sent: the StarRocks 3.1 FE rejects a stream load without it
+ *       ("There is no 100-continue header", verified on 3.1.17).</li>
+ *   <li>Connections are never reused ({@code Connection: close}): the 3.1 BE replies {@code 400 Bad Request} to a
+ *       second stream load on a kept-alive connection (verified on 3.1.17).</li>
  *   <li>Idempotency: every load carries a caller supplied label. {@code Label Already Exists} with an existing job
  *       that is {@code FINISHED} / {@code VISIBLE} / {@code COMMITTED} is reported as already loaded; a job still
  *       running is a retryable {@link PipelineException}.</li>
@@ -49,6 +56,7 @@ public final class StreamLoadClient implements Closeable {
     private final String authorization;
     private final CloseableHttpClient http;
     private final Duration loadTimeout;
+    private final UnaryOperator<URI> redirectRewriter;
     private final ObjectMapper json = new ObjectMapper();
 
     /**
@@ -56,6 +64,15 @@ public final class StreamLoadClient implements Closeable {
      * @param loadTimeout StarRocks {@code timeout} header and HTTP response timeout
      */
     public StreamLoadClient(URI feHttpUrl, String user, String password, Duration loadTimeout) {
+        this(feHttpUrl, user, password, loadTimeout, UnaryOperator.identity());
+    }
+
+    /**
+     * @param redirectRewriter maps the BE address of a redirect to an address reachable from this client
+     */
+    public StreamLoadClient(URI feHttpUrl, String user, String password, Duration loadTimeout,
+                            UnaryOperator<URI> redirectRewriter) {
+        this.redirectRewriter = Objects.requireNonNull(redirectRewriter, "redirectRewriter");
         this.feHttpUrl = Objects.requireNonNull(feHttpUrl, "feHttpUrl");
         this.authorization = "Basic " + Base64.getEncoder().encodeToString(
                 (user + ":" + (password == null ? "" : password)).getBytes(StandardCharsets.UTF_8));
@@ -73,6 +90,9 @@ public final class StreamLoadClient implements Closeable {
                         .build())
                 .disableRedirectHandling()
                 .disableAutomaticRetries()
+                // StarRocks 3.1 BE answers "400 Bad Request" to a stream load sent on a reused keep-alive connection
+                // (verified on 3.1.17): every load uses a fresh connection.
+                .setConnectionReuseStrategy((request, response, context) -> false)
                 .build();
     }
 
@@ -96,6 +116,7 @@ public final class StreamLoadClient implements Closeable {
             HttpPut put = new HttpPut(target);
             put.setHeader("Authorization", authorization);
             put.setHeader("Expect", "100-continue");
+            put.setHeader("Connection", "close");
             put.setHeader("label", label);
             put.setHeader("format", "json");
             put.setHeader("strip_outer_array", "true");
@@ -118,7 +139,7 @@ public final class StreamLoadClient implements Closeable {
                 if (response.location == null) {
                     throw new PipelineException("stream load redirect without Location from " + target);
                 }
-                target = target.resolve(response.location);
+                target = redirectRewriter.apply(target.resolve(response.location));
                 continue;
             }
             if (response.code != 200) {

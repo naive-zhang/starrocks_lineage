@@ -212,7 +212,8 @@ public final class StarRocksAuditAstVisitor extends StarRocksBaseVisitor<Void> {
     public Void visitCreateTableAsSelectStatement(StarRocksParser.CreateTableAsSelectStatementContext ctx) {
         TableIdentifier targetTable = targetTable(ctx.qualifiedName());
         RelationDescriptor source = analyzeQueryRelation(ctx.queryStatement().queryRelation());
-        List<String> columns = ctx.identifier().isEmpty() ? names(source.getFields()) : identifiers(ctx.identifier());
+        List<String> columns = ctx.identifier().isEmpty() ? createdColumnNames(targetTable, source)
+                : identifiers(ctx.identifier());
         emitLineage(targetTable, columns, source);
         return null;
     }
@@ -221,8 +222,44 @@ public final class StarRocksAuditAstVisitor extends StarRocksBaseVisitor<Void> {
     public Void visitCreateTemporaryTableStatement(StarRocksParser.CreateTemporaryTableStatementContext ctx) {
         TableIdentifier targetTable = targetTable(ctx.qualifiedName());
         RelationDescriptor source = analyzeQueryRelation(ctx.queryStatement().queryRelation());
-        emitLineage(targetTable, names(source.getFields()), source);
+        emitLineage(targetTable, createdColumnNames(targetTable, source), source);
         return null;
+    }
+
+    /**
+     * Column names of an object created from a query without a column list (CTAS, view, materialized view).
+     *
+     * <p>StarRocks names an unaliased expression column after its <i>normalised</i> SQL ({@code row_number() over
+     * (order by amount asc )}, {@code case when (amount > 1) then 1 end}), not after the source text (verified on
+     * 3.1.17 by {@code AnalyzerDifferentialIT}). The audited statement succeeded, so the object exists: its real
+     * column names are taken positionally from the metadata (the cached entry is refreshed first, the object is
+     * new). Only when the metadata is unavailable or does not match the query arity are the derived names used,
+     * with a warning.</p>
+     */
+    private List<String> createdColumnNames(TableIdentifier target, RelationDescriptor source) {
+        stack.getMetadata().invalidate(target);
+        Optional<TableSchema> schema = stack.getMetadata().getTableSchema(target);
+        if (schema.isPresent() && schema.get().size() == source.size() && source.isPositionallyComplete()) {
+            return schema.get().getColumnNames();
+        }
+        List<String> derived = names(source.getFields());
+        boolean needsEngineName = false;
+        for (RelationField f : source.getFields()) {
+            String expr = f.getExpression();
+            // an unaliased complex expression is named after its text, which StarRocks normalises differently
+            if (expr != null && f.getName().equals(Identifiers.normalizeColumn(expr))
+                    && !expr.matches("[A-Za-z0-9_`.]+")) {
+                needsEngineName = true;
+                break;
+            }
+        }
+        if (needsEngineName || schema.isPresent()) {
+            result.addWarning("column names of " + target + " derived from the query text"
+                    + (schema.isPresent() ? " (metadata has " + schema.get().size() + " columns, query "
+                    + source.size() + ")" : " (no metadata yet)") + ": unaliased expressions may be named "
+                    + "differently by StarRocks");
+        }
+        return derived;
     }
 
     @Override
@@ -252,7 +289,7 @@ public final class StarRocksAuditAstVisitor extends StarRocksBaseVisitor<Void> {
         for (StarRocksParser.ColumnNameWithCommentContext c : columnList) {
             columns.add(identifierText(c.columnName));
         }
-        emitLineage(targetTable, columns.isEmpty() ? names(source.getFields()) : columns, source);
+        emitLineage(targetTable, columns.isEmpty() ? createdColumnNames(targetTable, source) : columns, source);
     }
 
     @Override

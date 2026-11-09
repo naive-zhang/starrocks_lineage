@@ -337,7 +337,8 @@ class AuditLogSyncPipelineTest {
             }
         };
         pipeline("node-1", 100, 1_000, sink(), tracking).runOnce();
-        assertEquals(1, invalidations.get());
+        assertEquals(2, invalidations.get(), "analyzer refreshes the target before reading its columns, the "
+                + "pipeline refreshes it again after the batch");
     }
 
     @Test

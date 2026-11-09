@@ -208,7 +208,9 @@ public final class AuditLogSyncPipeline implements AutoCloseable {
     private List<AuditLogRecord> readRange(Watermark start, Watermark end) {
         List<AuditLogRecord> all = new ArrayList<>();
         Watermark cursor = start;
-        LocalDateTime upper = end.getTimestamp().plusNanos(1000);
+        // exclusive bound one whole second after the end: a sub-second bound is truncated by StarRocks and would
+        // drop the end record itself (review R5-03); records after `end` in that second are filtered below
+        LocalDateTime upper = end.getTimestamp().withNano(0).plusSeconds(1);
         while (true) {
             List<AuditLogRecord> page = source.fetch(cursor, upper, config.getPageSize());
             for (AuditLogRecord r : page) {

@@ -104,6 +104,11 @@ class WriteLineageAnalysisTest {
         assertDirect(implicit, "dw.c3.cnt", "CONSTANT", TransformType.CONSTANT);
         assertIndirect(implicit, "dw.c3.cnt", "users.city");
         assertIndirect(implicit, "dw.c3.city", "users.city");
+        assertFalse(implicit.isDegraded(), "aliased / plain column names need no engine naming");
+
+        SqlParseResult unaliased = success("CREATE VIEW dw.v9 AS SELECT city, COUNT(*) FROM users GROUP BY city");
+        assertTrue(unaliased.getWarnings().stream().anyMatch(w -> w.contains("derived from the query text")),
+                "no metadata for the new view yet: unaliased expression names are a best effort");
     }
 
     @Test

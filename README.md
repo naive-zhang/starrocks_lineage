@@ -14,6 +14,15 @@ Requires JDK 11+ and Maven 3.6+.
 mvn clean test
 ```
 
+Integration tests against a real StarRocks 3.1.17 started with Testcontainers (requires Docker; skipped without it):
+
+```bash
+mvn verify -Pit
+```
+
+See [docs/container-verification.md](docs/container-verification.md) for what the 34 container tests cover and
+[docs/staging-smoke-test.md](docs/staging-smoke-test.md) for the staging smoke-test runbook (`scripts/smoke`).
+
 ## Layout
 
 | Path | Content |

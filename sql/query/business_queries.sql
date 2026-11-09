@@ -58,14 +58,17 @@ WHERE c.TABLE_SCHEMA NOT IN ('information_schema', '_statistics_', 'starrocks_au
 ORDER BY db_name, table_name, column_name;
 
 -- Q5. Which users read a column during a day: decode the bitmap through the user dictionary.
+--     The join chain is written left-deep (b CROSS JOIN LATERAL UNNEST ... JOIN d): in "b, UNNEST(...) JOIN d" the
+--     JOIN binds to UNNEST first and b is not visible to it (verified on StarRocks 3.1.17).
 SELECT d.user_name
 FROM (
-    SELECT BITMAP_TO_STRING(BITMAP_UNION(user_bitmap)) AS ids
+    SELECT BITMAP_UNION(user_bitmap) AS bm
     FROM audit_lineage_db.audit_column_hourly_usage
     WHERE stat_hour >= '${day}' AND stat_hour < DATE_ADD('${day}', INTERVAL 1 DAY)
       AND catalog_name = '${catalog}' AND db_name = '${db}' AND table_name = '${table}' AND column_name = '${column}'
-) b, UNNEST(SPLIT(b.ids, ',')) AS t(user_id_str)
-JOIN audit_lineage_db.audit_user_dict d ON d.user_id = CAST(t.user_id_str AS BIGINT)
+) b
+CROSS JOIN LATERAL UNNEST(BITMAP_TO_ARRAY(b.bm)) AS t(user_id)
+JOIN audit_lineage_db.audit_user_dict d ON d.user_id = t.user_id
 ORDER BY d.user_name;
 
 -- Q6. Upstream lineage of one target column (one hop).

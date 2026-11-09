@@ -22,9 +22,14 @@ public final class Watermark implements Comparable<Watermark> {
         this.queryId = Objects.requireNonNull(queryId, "queryId");
     }
 
-    /** @return a watermark before every record of {@code start} and later */
+    /**
+     * @return a watermark before every record of {@code start} and later, and after every record before it.
+     *         Whole seconds only: the audit {@code timestamp} is a DATETIME without fraction and StarRocks drops
+     *         the fraction of a bound parameter, so sub-second bounds silently move (review R5-03). The previous
+     *         second with the maximal query id {@code "\uffff"} orders after every real query id of that second.
+     */
     public static Watermark startingAt(LocalDateTime start) {
-        return new Watermark(start.minusNanos(1000), "");
+        return new Watermark(start.withNano(0).minusSeconds(1), "\uffff");
     }
 
     public LocalDateTime getTimestamp() {
