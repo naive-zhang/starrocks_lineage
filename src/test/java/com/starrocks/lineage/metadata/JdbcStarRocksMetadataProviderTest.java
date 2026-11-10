@@ -143,6 +143,17 @@ class JdbcStarRocksMetadataProviderTest {
                 new SQLException("Access denied for user", "28000", 1045)));
     }
 
+    /** Stage 5 gap 2: a privilege error repeats on every retry, so it must not fail the batch forever. */
+    @Test
+    void accessDeniedClassification() {
+        assertTrue(JdbcStarRocksMetadataProvider.isAccessDenied(new SQLException("x", "42000", 1142)));
+        assertTrue(JdbcStarRocksMetadataProvider.isAccessDenied(new SQLException("x", "42000", 1044)));
+        assertTrue(JdbcStarRocksMetadataProvider.isAccessDenied(new SQLException(
+                "Access denied; you need (at least one of) the SELECT privilege(s) on TABLE t", "HY000", 1064)));
+        assertFalse(JdbcStarRocksMetadataProvider.isAccessDenied(
+                new SQLException("Communications link failure", "08S01", 0)));
+    }
+
     @Test
     void configValidation() {
         assertThrows(IllegalArgumentException.class, () -> new JdbcStarRocksMetadataProvider.Config(

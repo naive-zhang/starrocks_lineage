@@ -2,7 +2,9 @@
 -- Target table 2: hourly column usage of pure QUERY statements (top level queryStatement)
 --
 -- Model     : AGGREGATE KEY (stat_hour, catalog_name, db_name, table_name, column_name)
--- Partition : RANGE(stat_hour) with daily dynamic partitions, 400 days retention, 3 days pre-created.
+-- Partition : expression partitioning date_trunc('day', stat_hour): a load creates the partition of ANY day it
+--             touches (first run starting yesterday, late records, rebuilds), partition_live_number keeps 400 days.
+--             Dynamic partitions only pre-create today..+N and rejected yesterday's rows (Stage 5, gap 1).
 -- Bucketing : HASH(db_name, table_name) - every column of one table lands in the same tablet so the dominant query
 --             "usage of table X during the last N days" touches one tablet per partition.
 --
@@ -11,10 +13,14 @@
 --   *_clause_cnt     : number of queries that used the column at least once in that clause
 --                      group_by_cnt includes HAVING and window PARTITION BY,
 --                      order_by_cnt includes window ORDER BY, where_clause_cnt includes QUALIFY
---   user_bitmap      : exact distinct users - to_bitmap(user_id) where user_id comes from audit_user_dict
---                      (StarRocks 3.1 has no bitmap_hash64; bitmap_hash is 32-bit and collides, see review R-04)
+--   user_bitmap      : exact distinct users - to_bitmap(user_id), user_id = first 63 bits of SHA-256(user)
+--                      (UserIds; stateless, identical on every instance; StarRocks 3.1 has no bitmap_hash64 and
+--                      bitmap_hash is 32-bit and collides, see review R-04)
 --   user_hll         : approximate distinct users - hll_hash(user)
 --
+-- Additivity        : the usage load of a batch is the only non-idempotent write of the usage path. It is ONE Stream
+--                     Load per batch (label <batch_id>_usage); a replay after the FE label retention is decided with
+--                     get_load_state, never guessed (Stage 5, gap 4).
 -- Load contract     : the pipeline emits ONE ROW PER (stat_hour, column, user) with that user's subtotals. SUM metrics
 --                     add up to the per-column totals and the bitmap/HLL of a single user merge into the column UV.
 -- =====================================================================================================================
@@ -30,7 +36,7 @@ CREATE TABLE IF NOT EXISTS audit_lineage_db.audit_column_hourly_usage (
     join_clause_cnt    BIGINT         SUM     DEFAULT "0" COMMENT "queries using the column in JOIN ON / USING",
     group_by_cnt       BIGINT         SUM     DEFAULT "0" COMMENT "queries using the column in GROUP BY / HAVING / PARTITION BY",
     order_by_cnt       BIGINT         SUM     DEFAULT "0" COMMENT "queries using the column in ORDER BY / window ORDER BY",
-    user_bitmap        BITMAP         BITMAP_UNION        COMMENT "exact distinct users (audit_user_dict.user_id)",
+    user_bitmap        BITMAP         BITMAP_UNION        COMMENT "exact distinct users (UserIds.idOf(user))",
     user_hll           HLL            HLL_UNION           COMMENT "approximate distinct users (hll_hash(user))",
     total_scan_bytes   BIGINT         SUM     DEFAULT "0" COMMENT "sum of scanBytes of the accessing queries",
     total_query_time_ms BIGINT        SUM     DEFAULT "0" COMMENT "sum of queryTime of the accessing queries",
@@ -39,15 +45,10 @@ CREATE TABLE IF NOT EXISTS audit_lineage_db.audit_column_hourly_usage (
 ) ENGINE = OLAP
 AGGREGATE KEY (stat_hour, catalog_name, db_name, table_name, column_name)
 COMMENT "Hourly column access statistics extracted from starrocks_audit_db__.starrocks_audit_tbl__"
-PARTITION BY RANGE (stat_hour) ()
+PARTITION BY date_trunc('day', stat_hour)
 DISTRIBUTED BY HASH(db_name, table_name) BUCKETS 8
 PROPERTIES (
     "replication_num" = "3",
-    "dynamic_partition.enable" = "true",
-    "dynamic_partition.time_unit" = "DAY",
-    "dynamic_partition.start" = "-400",
-    "dynamic_partition.end" = "3",
-    "dynamic_partition.prefix" = "p",
-    "dynamic_partition.buckets" = "8",
+    "partition_live_number" = "400",
     "compression" = "LZ4"
 );

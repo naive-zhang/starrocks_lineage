@@ -3,6 +3,8 @@
 > 状态：**终审签字（FINAL SIGN-OFF）**。`mvn test` 共 311 个用例全部通过，其中 Stage 4 新增 44 个。
 > 代码位于 `com.starrocks.lineage.pipeline`。
 > 验收套件为 `com.starrocks.lineage.analyzer.StarRocksSqlAnalyzerTest`（8 类高难度 SQL，共 20 个用例）。
+>
+> **⚠ 已被 Stage 5 取代的部分**：本文描述的 Pipeline 存储模型（stage 表 + `last_batch_id` 合并、计数器式用户字典、动态分区、按水位重放）已在 [Stage 5](stage5-reliability.md) 中重构。下文 R4-09 和 R4-10 两条结论是**错误的**，已在 Stage 5 第 3.4 节更正。本文保留作为历史记录。
 
 ---
 
@@ -118,8 +120,8 @@ DDL 同步更新：
 | R4-06 | 主要 | 并发 | 如果 `drain()` 与 `add()` 并发执行时不做同步，一次查询的多个列可能被拆到两个批次，某一批次的计数会短暂偏低。 | 使用读写锁：`add` 持读锁，`drain` 持写锁并整体替换 map。 | `concurrentAddsAndDrainsLoseNothing`（16 线程 × 2000 次，SUM 精确） |
 | R4-07 | 次要 | 确定性 | 同一条边在同一时刻被两条语句产生时，`last_query_id` 取决于线程调度顺序。 | 时间相同时按 queryId 的字典序决定，结果与执行顺序无关。 | `lineageMergeTieBreakIsOrderIndependent` |
 | R4-08 | 次要 | 元数据新鲜度 | 同一批次之后的查询，可能还看不到刚建好的 CTAS 表、视图或物化视图的 schema。 | 遇到这些语句时主动让对应的元数据缓存失效。 | `createdObjectsAreInvalidatedInTheMetadataCache` |
-| R4-09 | 接受风险 | 迟到数据 | 重放区间内如果有迟到写入的审计记录（时间早于 end，但在首次拉取之后才写入），它们的用量会因为标签相同而被跳过。 | `lateArrival` 窗口（默认 5 分钟）明显大于审计插件的刷写间隔，可以把这种风险降到可忽略的程度；文档已注明。 | — |
-| R4-10 | 接受风险 | 租约 | StarRocks 没有 CAS 操作，所以租约只是"尽力而为"。 | 正确性由批次意图和幂等写入保证，租约只用来避免重复工作。 | `secondInstanceCannotTakeALiveLease`、`leaseLifecycleIntentAndTakeoverAfterExpiry` |
+| R4-09 | ~~接受风险~~ **已更正** | 迟到数据 | 重放区间内如果有迟到写入的审计记录（时间早于 end，但在首次拉取之后才写入），它们的用量会因为标签相同而被跳过。 | ~~`lateArrival` 窗口可以把这种风险降到可忽略的程度~~。**更正（Stage 5）**：这个判断是错的，插件积压时审计写入完全可能晚于窗口。现在用成员表反连接做对账，把这些记录作为 LATE 批次补算。 | Stage 5 `Gap6LateArrivals`、IT `auditRowsArrivingDuringAnInterruptedBatchGoToReconciliation` |
+| R4-10 | ~~接受风险~~ **已更正** | 租约 | StarRocks 没有 CAS 操作，所以租约只是"尽力而为"。 | ~~正确性由批次意图和幂等写入保证，租约只用来避免重复工作~~。**更正（Stage 5）**：这个结论是错的。两个实例各自声明批次、暂停后被接管的僵尸实例继续写入、计数器式用户 id 的竞态，都会破坏正确性。现在每一步写入前都做隔离校验，SLICE 的 id 是确定性的（泄漏的写入会被标签去重），用户 id 改为无状态哈希。 | Stage 5 `Gap3Fencing`、IT `aPausedInstanceIsFencedOnARealCheckpoint` |
 
 ### 3.2 铁律终审核查（全项目）
 

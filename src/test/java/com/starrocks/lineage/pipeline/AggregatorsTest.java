@@ -16,7 +16,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -199,53 +201,62 @@ class AggregatorsTest {
     void lineageMergeTieBreakIsOrderIndependent() {
         ColumnLineageEdge e = ColumnLineageEdge.of(ColumnIdentifier.parse("c.d.t.x"), col("a"), LineageType.DIRECT,
                 TransformType.IDENTITY, null);
-        LineageRow a = new LineageRow(e, StatementType.INSERT_INTO, null, "qa", "u", T0, T0, 1);
-        LineageRow b = new LineageRow(e, StatementType.UPDATE, null, "qb", "u", T0, T0, 1);
+        LineageRow a = new LineageRow(T0, e, StatementType.INSERT_INTO, null, "qa", "u", T0, T0, 1);
+        LineageRow b = new LineageRow(T0, e, StatementType.UPDATE, null, "qb", "u", T0, T0, 1);
         assertEquals("qb", a.merge(b).getLastQueryId());
         assertEquals("qb", b.merge(a).getLastQueryId());
-        assertThrows(IllegalArgumentException.class, () -> a.merge(new LineageRow(ColumnLineageEdge.of(
+        assertThrows(IllegalArgumentException.class, () -> a.merge(new LineageRow(T0.plusDays(1), e,
+                StatementType.INSERT_INTO, null, "q", "u", T0, T0, 1)), "same edge, other day");
+        assertThrows(IllegalArgumentException.class, () -> a.merge(new LineageRow(T0, ColumnLineageEdge.of(
                 ColumnIdentifier.parse("c.d.t.y"), col("a"), LineageType.DIRECT, TransformType.IDENTITY, null),
                 StatementType.INSERT_INTO, null, "q", "u", T0, T0, 1)));
     }
 
     @Test
-    void userDictionaryAssignsDenseIdsAfterThePersistedMaximum() throws Exception {
-        Map<String, Long> persisted = new HashMap<>();
-        persisted.put("alice", 1L);
-        persisted.put("bob", 7L);
-        UserDictionary dict = new UserDictionary(persisted);
-        assertEquals(7L, dict.idOf("bob"));
+    void userIdsAreStatelessPositiveAndStable() throws Exception {
+        long alice = UserIds.idOf("alice");
+        assertTrue(alice > 0);
+        assertEquals(alice, UserIds.idOf("alice"), "pure function: every instance computes the same id");
+        assertNotEquals(alice, UserIds.idOf("Alice"));
+        // first 8 bytes of SHA-256("alice") = 2bd806c97f0e00af, masked to 63 bits
+        assertEquals(0x2bd806c97f0e00afL, alice);
         ExecutorService pool = Executors.newFixedThreadPool(8);
         try {
             List<Future<Long>> ids = new ArrayList<>();
-            for (int i = 0; i < 200; i++) {
-                final String user = "u" + (i % 50);
-                ids.add(pool.submit(() -> dict.idOf(user)));
+            for (int i = 0; i < 2000; i++) {
+                final String user = "u" + i;
+                ids.add(pool.submit(() -> UserIds.idOf(user)));
             }
-            Map<String, Long> seen = new HashMap<>();
-            for (int i = 0; i < 200; i++) {
-                long id = ids.get(i).get();
-                Long previous = seen.putIfAbsent("u" + (i % 50), id);
-                if (previous != null) {
-                    assertEquals(previous.longValue(), id, "stable id per user");
-                }
+            Set<Long> distinct = new HashSet<>();
+            for (Future<Long> f : ids) {
+                long id = f.get();
+                assertTrue(id > 0 && id <= Long.MAX_VALUE);
+                distinct.add(id);
             }
-            assertEquals(50, new java.util.HashSet<>(seen.values()).size(), "unique ids");
-            assertTrue(seen.values().stream().allMatch(id -> id >= 8 && id <= 57), "dense after max(7)");
+            assertEquals(2000, distinct.size());
         } finally {
             pool.shutdownNow();
         }
-        List<UserDictionary.Entry> pending = dict.drainPending();
-        assertEquals(50, pending.size());
-        assertTrue(dict.drainPending().isEmpty());
-        assertEquals(52, dict.size());
-        assertThrows(IllegalArgumentException.class,
-                () -> new UserDictionary(Collections.singletonMap("x", 0L)));
-        Map<String, Long> dup = new HashMap<>();
-        dup.put("x", 3L);
-        dup.put("y", 3L);
-        assertThrows(IllegalArgumentException.class, () -> new UserDictionary(dup));
-        assertNotEquals(dict.idOf("brand-new"), dict.idOf("alice"));
+        assertThrows(NullPointerException.class, () -> UserIds.idOf(null));
+    }
+
+    @Test
+    void lineageRowsAreKeyedByDay() {
+        ColumnIdentifier tgt = ColumnIdentifier.parse("default_catalog.db.t2.x");
+        SqlParseResult insert = SqlParseResult.builder("q").statementType(StatementType.INSERT_INTO)
+                .addEdge(ColumnLineageEdge.of(tgt, col("a"), LineageType.DIRECT, TransformType.IDENTITY, "a"))
+                .build();
+        LineageAggregator agg = new LineageAggregator();
+        agg.add(record("q1", T0.plusDays(1), "u", 1, 1), insert);
+        agg.add(record("q2", T0, "u", 1, 1), insert);
+        agg.add(record("q3", T0.withHour(23).withMinute(59), "u", 1, 1), insert);
+        List<LineageRow> rows = agg.drain();
+        assertEquals(2, rows.size(), "one row per (day, edge)");
+        assertEquals(T0.toLocalDate().atStartOfDay(), rows.get(0).getStatDay());
+        assertEquals(2, rows.get(0).getExecCount());
+        assertEquals(T0.toLocalDate().plusDays(1).atStartOfDay(), rows.get(1).getStatDay());
+        assertEquals(1, rows.get(1).getExecCount());
+        assertEquals(rows.get(0).getEdgeId(), rows.get(1).getEdgeId());
     }
 
     @Test
@@ -257,10 +268,12 @@ class AggregatorsTest {
         Collections.sort(list);
         assertEquals(Arrays.asList(a, b, c), list);
         assertTrue(Watermark.startingAt(T0).compareTo(new Watermark(T0, "")) < 0);
-        String id = AuditLogSyncPipeline.batchId("p", a, c);
-        assertEquals(id, AuditLogSyncPipeline.batchId("p", a, c));
-        assertNotEquals(id, AuditLogSyncPipeline.batchId("p", a, b));
-        assertNotEquals(id, AuditLogSyncPipeline.batchId("p2", a, c));
+        String id = AuditLogSyncPipeline.batchId("p", "SLICE", T0.toString(), T0.plusMinutes(5).toString());
+        assertEquals(id, AuditLogSyncPipeline.batchId("p", "SLICE", T0.toString(), T0.plusMinutes(5).toString()));
+        assertNotEquals(id, AuditLogSyncPipeline.batchId("p", "SLICE", T0.toString(), T0.plusMinutes(10).toString()));
+        assertNotEquals(id, AuditLogSyncPipeline.batchId("p2", "SLICE", T0.toString(), T0.plusMinutes(5).toString()));
+        assertNotEquals(AuditLogSyncPipeline.batchId("ab", "c"), AuditLogSyncPipeline.batchId("a", "bc"),
+                "parts are separated");
         assertTrue(id.matches("[0-9a-f]{32}"));
     }
 }

@@ -11,6 +11,7 @@ import java.util.TreeSet;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -38,14 +39,19 @@ class StarRocksDdlIT {
         Set<String> tables = sr.query("SELECT TABLE_NAME FROM information_schema.tables WHERE TABLE_SCHEMA = "
                 + "'audit_lineage_db'").stream().map(r -> String.valueOf(r.get("TABLE_NAME")))
                 .collect(Collectors.toCollection(TreeSet::new));
-        assertEquals(new TreeSet<>(java.util.Arrays.asList("audit_column_hourly_usage", "audit_column_lineage",
-                "audit_column_lineage_stage", "audit_lineage_merge_log", "audit_lineage_sync_checkpoint",
-                "audit_user_dict")), tables);
+        assertEquals(new TreeSet<>(StarRocksCluster.PIPELINE_TABLES), tables);
 
         String lineage = createTable("audit_column_lineage");
         assertTrue(lineage.contains("PRIMARY KEY(`edge_id`)"), lineage);
         assertTrue(lineage.contains("ORDER BY(`target_db`, `target_table`, `target_column`)"), lineage);
-        assertTrue(lineage.contains("`last_batch_id`"), lineage);
+        assertFalse(lineage.contains("last_batch_id"), "a projection of the daily facts, never incremented");
+
+        String daily = createTable("audit_column_lineage_daily");
+        assertTrue(daily.contains("AGGREGATE KEY(`stat_day`, `edge_id`)"), daily);
+        assertTrue(daily.contains("`exec_count` bigint(20) SUM"), daily);
+        assertTrue(daily.contains("`first_seen_time` datetime MIN"), daily);
+        assertTrue(daily.contains("`last_seen_time` datetime MAX"), daily);
+        assertTrue(daily.contains("date_trunc('day', stat_day)"), daily);
 
         String usage = createTable("audit_column_hourly_usage");
         assertTrue(usage.contains("AGGREGATE KEY(`stat_hour`, `catalog_name`, `db_name`, `table_name`, "
@@ -53,20 +59,35 @@ class StarRocksDdlIT {
         assertTrue(usage.contains("`user_bitmap` bitmap BITMAP_UNION"), usage);
         assertTrue(usage.contains("`user_hll` hll HLL_UNION"), usage);
         assertTrue(usage.contains("`max_query_time_ms` bigint(20) MAX"), usage);
-        assertTrue(usage.contains("\"dynamic_partition.time_unit\" = \"DAY\""), usage);
+        assertTrue(usage.contains("date_trunc('day', stat_hour)"), usage);
+        assertTrue(usage.contains("\"partition_live_number\" = \"400\""), usage);
+        assertFalse(usage.contains("dynamic_partition"), "gap 1: dynamic partitions rejected yesterday's rows");
 
+        assertTrue(createTable("audit_user_dict").contains("`first_seen_time` datetime MIN"));
         String checkpoint = createTable("audit_lineage_sync_checkpoint");
         assertTrue(checkpoint.contains("PRIMARY KEY(`pipeline_name`)"), checkpoint);
-        assertTrue(checkpoint.contains("`pending_batch_id`"), checkpoint);
+        assertTrue(checkpoint.contains("`pending_step`"), checkpoint);
+        assertTrue(createTable("audit_lineage_batch_member")
+                .contains("PRIMARY KEY(`pipeline_name`, `query_id`, `audit_time`)"));
+        assertTrue(createTable("audit_lineage_batch_lineage")
+                .contains("PRIMARY KEY(`batch_id`, `edge_id`, `stat_day`, `refresh_only`, `batch_time`)"));
+        assertTrue(createTable("audit_lineage_dead_letter")
+                .contains("PRIMARY KEY(`pipeline_name`, `query_id`, `kind`)"));
     }
 
+    /** Gap 1: a load creates the partition of any day it touches, yesterday and last year included. */
     @Test
-    void dynamicPartitionsExistForTodayAndTheNextDays() {
-        List<Map<String, Object>> usage = sr.query("SHOW PARTITIONS FROM audit_lineage_db.audit_column_hourly_usage");
-        assertTrue(usage.size() >= 4, "today + 3 days pre-created: " + usage.size());
-        List<Map<String, Object>> stage = sr.query(
-                "SHOW PARTITIONS FROM audit_lineage_db.audit_column_lineage_stage");
-        assertTrue(stage.size() >= 3, "today + 2 days pre-created: " + stage.size());
+    void expressionPartitionsAreCreatedByTheLoadsForPastDays() {
+        sr.execute("INSERT INTO audit_lineage_db.audit_column_hourly_usage (stat_hour, catalog_name, db_name, "
+                        + "table_name, column_name, access_query_cnt, user_bitmap, user_hll, last_access_time) "
+                        + "VALUES (DATE_SUB(DATE_TRUNC('hour', NOW()), INTERVAL 1 DAY), 'c', 'd', 'ddl_it', 'x', 1, "
+                        + "to_bitmap(1), hll_hash('u'), NOW()), "
+                        + "(DATE_SUB(DATE_TRUNC('hour', NOW()), INTERVAL 200 DAY), 'c', 'd', 'ddl_it', 'x', 1, "
+                        + "to_bitmap(1), hll_hash('u'), NOW())");
+        List<Map<String, Object>> rows = sr.query("SELECT COUNT(*) AS n FROM audit_lineage_db"
+                + ".audit_column_hourly_usage WHERE table_name = 'ddl_it'");
+        assertEquals(2L, ((Number) rows.get(0).get("n")).longValue());
+        assertTrue(sr.query("SHOW PARTITIONS FROM audit_lineage_db.audit_column_hourly_usage").size() >= 2);
     }
 
     @Test
@@ -76,9 +97,9 @@ class StarRocksDdlIT {
                 .replace("${day}", "2024-06-18").replace("${catalog}", "default_catalog")
                 .replace("${db}", "sales").replace("${table}", "orders").replace("${column}", "amount");
         List<String> statements = StarRocksCluster.splitScript(script);
-        assertEquals(7, statements.size(), "Q1..Q7 (Q8 is a comment)");
+        assertEquals(9, statements.size(), "Q1..Q7, Q9, Q10 (Q8 is a comment)");
         List<List<Map<String, Object>>> results = sr.executeScript(script);
-        assertEquals(7, results.size());
+        assertEquals(9, results.size());
     }
 
     private static String createTable(String table) {

@@ -4,9 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
-import org.h2.jdbcx.JdbcDataSource;
 
-import javax.sql.DataSource;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -14,26 +12,26 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.SQLException;
-import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Predicate;
 
 /**
- * Test double of a StarRocks cluster: an FE that answers stream loads with {@code 307} to a BE endpoint on the same
- * server, a BE that enforces Basic auth, {@code Expect: 100-continue}, label uniqueness, and an H2 database (MySQL
- * mode) holding the {@code audit_lineage_db} tables. Stream-loaded rows of the lineage stage and the user dictionary
- * are inserted into H2 so the JDBC merge can run on them; every load is also recorded.
+ * HTTP test double of a StarRocks 3.1 FE / BE pair, with the behaviour verified on a real 3.1.17 container:
+ * <ul>
+ *   <li>the FE answers a Stream Load with {@code 307} to the BE;</li>
+ *   <li>the BE enforces Basic auth and {@code Expect: 100-continue}, and label uniqueness ("Label Already Exists");</li>
+ *   <li>rows matching {@link #rejectRow} are data-quality errors: without {@code max_filter_ratio} the load fails
+ *       ({@code NumberFilteredRows > 0}) and the label stays free; with {@code max_filter_ratio: 1} the other rows
+ *       are loaded;</li>
+ *   <li>{@code GET /api/{db}/get_load_state?label=} answers VISIBLE for used labels, the configured state for
+ *       {@link #labelStates}, UNKNOWN otherwise.</li>
+ * </ul>
  */
 final class FakeStarRocks implements AutoCloseable {
 
@@ -41,40 +39,14 @@ final class FakeStarRocks implements AutoCloseable {
     static final String PASSWORD = "secret";
 
     final HttpServer server;
-    final DataSource dataSource;
-    private final Connection keepAlive;
     private final ObjectMapper json = new ObjectMapper();
     private final Set<String> labels = Collections.synchronizedSet(new HashSet<>());
+    final java.util.Map<String, String> labelStates = Collections.synchronizedMap(new java.util.HashMap<>());
     final List<Load> loads = Collections.synchronizedList(new ArrayList<>());
     final AtomicInteger failNextLoads = new AtomicInteger();
+    volatile Predicate<JsonNode> rejectRow = r -> false;
 
-    FakeStarRocks() throws Exception {
-        JdbcDataSource h2 = new JdbcDataSource();
-        h2.setURL("jdbc:h2:mem:sr_" + System.nanoTime() + ";MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1");
-        dataSource = h2;
-        keepAlive = h2.getConnection();
-        try (Statement st = keepAlive.createStatement()) {
-            st.execute("CREATE SCHEMA audit_lineage_db");
-            st.execute("CREATE TABLE audit_lineage_db.audit_user_dict (user_name VARCHAR(256) PRIMARY KEY, "
-                    + "user_id BIGINT NOT NULL, first_seen_time TIMESTAMP NOT NULL)");
-            String lineageCols = "target_catalog VARCHAR(128), target_db VARCHAR(256), target_table VARCHAR(256), "
-                    + "target_column VARCHAR(256), source_catalog VARCHAR(128), source_db VARCHAR(256), "
-                    + "source_table VARCHAR(256), source_column VARCHAR(256), lineage_type VARCHAR(16), "
-                    + "transform_type VARCHAR(16), transform_expr VARCHAR(2048), stmt_type VARCHAR(32), "
-                    + "sql_digest VARCHAR(64), last_query_id VARCHAR(64), last_exec_user VARCHAR(128), "
-                    + "first_seen_time TIMESTAMP, last_seen_time TIMESTAMP, exec_count BIGINT";
-            st.execute("CREATE TABLE audit_lineage_db.audit_column_lineage (edge_id VARCHAR(64) PRIMARY KEY, "
-                    + lineageCols + ", last_batch_id VARCHAR(64), update_time TIMESTAMP)");
-            st.execute("CREATE TABLE audit_lineage_db.audit_column_lineage_stage (batch_day DATE, "
-                    + "batch_id VARCHAR(64), edge_id VARCHAR(64), " + lineageCols + ")");
-            st.execute("CREATE TABLE audit_lineage_db.audit_lineage_merge_log (batch_id VARCHAR(64) PRIMARY KEY, "
-                    + "pipeline_name VARCHAR(64), lineage_rows BIGINT, usage_rows BIGINT, merged_time TIMESTAMP)");
-            st.execute("CREATE TABLE audit_lineage_db.audit_lineage_sync_checkpoint (pipeline_name VARCHAR(64) "
-                    + "PRIMARY KEY, "
-                    + "watermark_time TIMESTAMP, watermark_query_id VARCHAR(64), owner VARCHAR(128), "
-                    + "lease_expire_time TIMESTAMP, processed_rows BIGINT, pending_batch_id VARCHAR(64), "
-                    + "pending_end_time TIMESTAMP, pending_end_query_id VARCHAR(64), update_time TIMESTAMP(6))");
-        }
+    FakeStarRocks() throws IOException {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/api/", this::fe);
         server.createContext("/be/", this::be);
@@ -89,32 +61,42 @@ final class FakeStarRocks implements AutoCloseable {
         return new StreamLoadClient(feUrl(), USER, PASSWORD, java.time.Duration.ofSeconds(30));
     }
 
-    List<Load> loadsInto(String table) {
-        List<Load> result = new ArrayList<>();
-        synchronized (loads) {
-            for (Load l : loads) {
-                if (l.table.equals(table)) {
-                    result.add(l);
-                }
-            }
-        }
-        return result;
+    /** Forgets every label, like the FE after {@code label_keep_max_second}. */
+    void expireLabels() {
+        labels.clear();
     }
 
     private void fe(HttpExchange ex) throws IOException {
         drain(ex.getRequestBody());
+        if (ex.getRequestURI().getPath().endsWith("/get_load_state")) {
+            if (!authorized(ex)) {
+                reply(ex, 401, "{}");
+                return;
+            }
+            String label = ex.getRequestURI().getQuery().replaceFirst("^label=", "");
+            String state = labelStates.getOrDefault(label, labels.contains(label) ? "VISIBLE" : "UNKNOWN");
+            reply(ex, 200, "{\"state\":\"" + state + "\",\"status\":\"OK\",\"msg\":\"Success\"}");
+            return;
+        }
         ex.getResponseHeaders().add("Location", "/be" + ex.getRequestURI().getPath());
         ex.sendResponseHeaders(307, -1);
         ex.close();
     }
 
+    private boolean authorized(HttpExchange ex) {
+        String expected = "Basic " + Base64.getEncoder()
+                .encodeToString((USER + ":" + PASSWORD).getBytes(StandardCharsets.UTF_8));
+        return expected.equals(ex.getRequestHeaders().getFirst("Authorization"));
+    }
+
     private void be(HttpExchange ex) throws IOException {
         byte[] body = drain(ex.getRequestBody());
-        String auth = ex.getRequestHeaders().getFirst("Authorization");
-        String expected = "Basic " + java.util.Base64.getEncoder()
-                .encodeToString((USER + ":" + PASSWORD).getBytes(StandardCharsets.UTF_8));
-        if (!expected.equals(auth)) {
+        if (!authorized(ex)) {
             reply(ex, 401, "{\"Status\":\"Fail\",\"Message\":\"no auth\"}");
+            return;
+        }
+        if (!"100-continue".equalsIgnoreCase(ex.getRequestHeaders().getFirst("Expect"))) {
+            reply(ex, 200, "{\"Status\":\"Fail\",\"Message\":\"There is no 100-continue header\"}");
             return;
         }
         String[] path = ex.getRequestURI().getPath().split("/");
@@ -125,43 +107,30 @@ final class FakeStarRocks implements AutoCloseable {
             reply(ex, 200, "{\"Status\":\"Fail\",\"Message\":\"too many versions\",\"ErrorURL\":\"http://be/err\"}");
             return;
         }
-        if (!labels.add(label)) {
+        if (labels.contains(label)) {
             reply(ex, 200, "{\"Status\":\"Label Already Exists\",\"ExistingJobStatus\":\"FINISHED\"}");
             return;
         }
         JsonNode rows = json.readTree(body);
-        Load load = new Load(db, table, label, ex.getRequestHeaders().getFirst("columns"),
-                ex.getRequestHeaders().getFirst("Expect"), rows);
-        loads.add(load);
-        try {
-            if ("audit_column_lineage_stage".equals(table) || "audit_user_dict".equals(table)) {
-                insert(db + "." + table, rows, "audit_user_dict".equals(table));
+        List<JsonNode> accepted = new ArrayList<>();
+        int rejected = 0;
+        for (JsonNode row : rows) {
+            if (rejectRow.test(row)) {
+                rejected++;
+            } else {
+                accepted.add(row);
             }
-        } catch (SQLException e) {
-            reply(ex, 200, "{\"Status\":\"Fail\",\"Message\":\"" + e.getMessage().replace('"', '\'') + "\"}");
+        }
+        boolean tolerant = "1".equals(ex.getRequestHeaders().getFirst("max_filter_ratio"));
+        if (rejected > 0 && !tolerant) {
+            reply(ex, 200, "{\"Status\":\"Fail\",\"Message\":\"too many filtered rows\",\"NumberLoadedRows\":0,"
+                    + "\"NumberFilteredRows\":" + rejected + ",\"ErrorURL\":\"http://be/_load_error_log?file=x\"}");
             return;
         }
-        reply(ex, 200, "{\"Status\":\"Success\",\"NumberLoadedRows\":" + rows.size() + "}");
-    }
-
-    private void insert(String table, JsonNode rows, boolean upsert) throws SQLException {
-        for (JsonNode row : rows) {
-            Map<String, String> values = new LinkedHashMap<>();
-            Iterator<Map.Entry<String, JsonNode>> it = row.fields();
-            while (it.hasNext()) {
-                Map.Entry<String, JsonNode> e = it.next();
-                values.put(e.getKey(), e.getValue().isNull() ? null : e.getValue().asText());
-            }
-            String sql = (upsert ? "MERGE" : "INSERT") + " INTO " + table + " (" + String.join(",", values.keySet())
-                    + ") VALUES (" + String.join(",", Collections.nCopies(values.size(), "?")) + ")";
-            try (Connection c = dataSource.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
-                int i = 1;
-                for (String v : values.values()) {
-                    ps.setString(i++, v);
-                }
-                ps.executeUpdate();
-            }
-        }
+        labels.add(label);
+        loads.add(new Load(db, table, label, ex.getRequestHeaders().getFirst("columns"), tolerant, accepted));
+        reply(ex, 200, "{\"Status\":\"Success\",\"NumberLoadedRows\":" + accepted.size() + ",\"NumberFilteredRows\":"
+                + rejected + (rejected > 0 ? ",\"ErrorURL\":\"http://be/_load_error_log?file=x\"" : "") + "}");
     }
 
     private static byte[] drain(InputStream in) throws IOException {
@@ -183,33 +152,9 @@ final class FakeStarRocks implements AutoCloseable {
         }
     }
 
-    Map<String, Object> lineageRow(String edgeId) throws SQLException {
-        try (Connection c = dataSource.getConnection(); Statement st = c.createStatement();
-             java.sql.ResultSet rs = st.executeQuery("SELECT * FROM audit_lineage_db.audit_column_lineage "
-                     + "WHERE edge_id = '" + edgeId + "'")) {
-            if (!rs.next()) {
-                return null;
-            }
-            Map<String, Object> m = new HashMap<>();
-            for (int i = 1; i <= rs.getMetaData().getColumnCount(); i++) {
-                m.put(rs.getMetaData().getColumnLabel(i).toLowerCase(), rs.getObject(i));
-            }
-            return m;
-        }
-    }
-
-    long count(String table) throws SQLException {
-        try (Connection c = dataSource.getConnection(); Statement st = c.createStatement();
-             java.sql.ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM audit_lineage_db." + table)) {
-            rs.next();
-            return rs.getLong(1);
-        }
-    }
-
     @Override
-    public void close() throws Exception {
+    public void close() {
         server.stop(0);
-        keepAlive.close();
     }
 
     /** One accepted stream load. */
@@ -218,15 +163,15 @@ final class FakeStarRocks implements AutoCloseable {
         final String table;
         final String label;
         final String columns;
-        final String expect;
-        final JsonNode rows;
+        final boolean tolerant;
+        final List<JsonNode> rows;
 
-        Load(String db, String table, String label, String columns, String expect, JsonNode rows) {
+        Load(String db, String table, String label, String columns, boolean tolerant, List<JsonNode> rows) {
             this.db = db;
             this.table = table;
             this.label = label;
             this.columns = columns;
-            this.expect = expect;
+            this.tolerant = tolerant;
             this.rows = rows;
         }
     }

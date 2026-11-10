@@ -75,3 +75,44 @@ void checkClock(javax.sql.DataSource ds) throws Exception {
 String sqlTime(LocalDateTime t) {
     return t.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
 }
+
+LocalDateTime parseTime(String s) {
+    return LocalDateTime.parse(s.trim().replace(' ', 'T'));
+}
+
+String smokeName() {
+    return env("SMOKE_PIPELINE", "audit_lineage_smoke");
+}
+
+/** The pipeline configuration shared by smoke-run-cycle.jsh and smoke-ops.jsh (same name, same lease owner). */
+PipelineConfig smokeConfig() throws Exception {
+    // a stable owner: re-running a script from the same machine renews the lease instead of waiting for the previous
+    // run's lease (10 minutes) to expire
+    String owner = env("SMOKE_OWNER", "smoke-" + java.net.InetAddress.getLocalHost().getHostName());
+    return PipelineConfig.builder(smokeName(), owner)
+            .initialStart(LocalDateTime.now().minusHours(Long.parseLong(env("SMOKE_LOOKBACK_HOURS", "2"))))
+            .sliceSize(Duration.ofSeconds(Long.parseLong(env("SMOKE_SLICE_SECONDS", "300"))))
+            .lateArrival(Duration.ofSeconds(Long.parseLong(env("SMOKE_LATE_ARRIVAL_SECONDS", "300"))))
+            .reconcileInterval(Duration.ofSeconds(Long.parseLong(env("SMOKE_RECONCILE_SECONDS", "900"))))
+            .analyzerThreads(Integer.parseInt(env("SMOKE_THREADS", "4")))
+            .leaseTtl(Duration.ofMinutes(10)).build();
+}
+
+AuditLogSyncPipeline smokePipeline(HikariDataSource ds, StreamLoadClient sl) throws Exception {
+    JdbcStarRocksMetadataProvider metadata = new JdbcStarRocksMetadataProvider(ds);
+    return new AuditLogSyncPipeline(smokeConfig(), new JdbcAuditLogSource(ds), new JdbcCheckpointStore(ds),
+            new StarRocksSink(ds, sl, "audit_lineage_db", smokeName()), new StarRocksSqlAnalyzer(metadata),
+            metadata, Clock.systemDefaultZone());
+}
+
+String q(LocalDateTime t) {
+    return t == null ? "-" : "\"" + sqlTime(t) + "\"";
+}
+
+String report(CycleReport r) {
+    return "outcome=" + r.getOutcome() + " kind=" + r.getKind().map(Enum::name).orElse("-")
+            + " batch=" + r.getBatchId().orElse("-") + " range_start=" + q(r.getRangeStart().orElse(null))
+            + " range_end=" + q(r.getRangeEnd().orElse(null)) + " records=" + r.getRecords()
+            + " replay=" + r.isReplay() + " usage_rows=" + r.getUsageRows() + " lineage_rows=" + r.getLineageRows()
+            + " dead_letters=" + r.getDeadLetters() + " filtered_rows=" + r.getFilteredRows();
+}

@@ -281,8 +281,10 @@ public final class StarRocksCluster {
     }
 
     /**
-     * The audit table of the StarRocks 3.1 audit loader plugin (official DDL, single replica). The image only ships
-     * the built-in AuditLogBuilder, so the integration tests write audit rows themselves.
+     * The audit table of the StarRocks 3.1 audit loader plugin (official columns, single replica). The image only
+     * ships the built-in AuditLogBuilder, so the integration tests write audit rows themselves. The plugin DDL uses
+     * dynamic partitions (today and later only); the tests need rows of yesterday and of last week (first run across
+     * days, late arrivals, rebuilds), so the test table uses expression partitioning with the same 30-day life.
      */
     private void createAuditTable() {
         execute("CREATE DATABASE IF NOT EXISTS starrocks_audit_db__",
@@ -295,25 +297,23 @@ public final class StarRocksCluster {
                         + "  `stmtId` INT, `isQuery` TINYINT, `feIp` VARCHAR(128), `stmt` VARCHAR(1048576),\n"
                         + "  `digest` VARCHAR(32), `planCpuCosts` DOUBLE, `planMemCosts` DOUBLE\n"
                         + ") ENGINE = OLAP DUPLICATE KEY (`queryId`, `timestamp`, `queryType`)\n"
-                        + "PARTITION BY RANGE (`timestamp`) ()\n"
+                        + "PARTITION BY date_trunc('day', `timestamp`)\n"
                         + "DISTRIBUTED BY HASH (`queryId`) BUCKETS 3\n"
-                        + "PROPERTIES (\"dynamic_partition.time_unit\" = \"DAY\","
-                        + " \"dynamic_partition.start\" = \"-30\","
-                        + " \"dynamic_partition.end\" = \"3\", \"dynamic_partition.prefix\" = \"p\","
-                        + " \"dynamic_partition.buckets\" = \"3\", \"dynamic_partition.enable\" = \"true\","
+                        + "PROPERTIES (\"partition_live_number\" = \"30\","
                         + " \"replication_num\" = \"1\")");
     }
+
+    /** Every table of sql/ddl. */
+    public static final List<String> PIPELINE_TABLES = java.util.Arrays.asList("audit_column_lineage",
+            "audit_column_lineage_daily", "audit_column_hourly_usage", "audit_user_dict",
+            "audit_lineage_sync_checkpoint", "audit_lineage_batch_member", "audit_lineage_batch_lineage",
+            "audit_lineage_dead_letter", "audit_lineage_batch_log");
 
     /** Empties every table written by the pipeline and the audit table. */
     public void resetPipelineTables() {
         applyProjectDdl();
-        execute("TRUNCATE TABLE audit_lineage_db.audit_column_lineage",
-                "TRUNCATE TABLE audit_lineage_db.audit_column_lineage_stage",
-                "TRUNCATE TABLE audit_lineage_db.audit_column_hourly_usage",
-                "TRUNCATE TABLE audit_lineage_db.audit_user_dict",
-                "TRUNCATE TABLE audit_lineage_db.audit_lineage_sync_checkpoint",
-                "TRUNCATE TABLE audit_lineage_db.audit_lineage_merge_log",
-                "TRUNCATE TABLE starrocks_audit_db__.starrocks_audit_tbl__");
+        execute(PIPELINE_TABLES.stream().map(t -> "TRUNCATE TABLE audit_lineage_db." + t).toArray(String[]::new));
+        execute("TRUNCATE TABLE starrocks_audit_db__.starrocks_audit_tbl__");
     }
 
     /**

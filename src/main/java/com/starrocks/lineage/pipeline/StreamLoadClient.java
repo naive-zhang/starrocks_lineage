@@ -2,6 +2,7 @@ package com.starrocks.lineage.pipeline;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.classic.methods.HttpPut;
 import org.apache.hc.client5.http.config.ConnectionConfig;
 import org.apache.hc.client5.http.config.RequestConfig;
@@ -97,14 +98,26 @@ public final class StreamLoadClient implements Closeable {
     }
 
     /**
-     * Loads a JSON array into {@code db.table}.
+     * Loads a JSON array into {@code db.table}; any filtered row fails the whole load.
      *
      * @param columns the {@code columns} header (column list with optional {@code col=expr} mappings)
      * @param body    UTF-8 JSON array of objects
      * @return the outcome
-     * @throws PipelineException on any failure
+     * @throws DataQualityException when StarRocks filtered rows (non-retryable, nothing was loaded)
+     * @throws PipelineException    on any other failure
      */
     public Result load(String db, String table, String label, String columns, byte[] body) {
+        return load(db, table, label, columns, body, false);
+    }
+
+    /**
+     * Loads a JSON array; with {@code tolerateFilteredRows} the rows StarRocks rejects (too long, out of range ...)
+     * are dropped instead of failing the load ({@code max_filter_ratio = 1}). Callers first try a strict load, record
+     * the rejection ({@link DataQualityException}), then re-send with the <b>same label</b>: StarRocks 3.1 allows a
+     * label to be reused after its load aborted (verified on 3.1.17), so exactly-once is preserved.
+     */
+    public Result load(String db, String table, String label, String columns, byte[] body,
+                       boolean tolerateFilteredRows) {
         if (!NAME.matcher(db).matches() || !NAME.matcher(table).matches()) {
             throw new IllegalArgumentException("invalid database / table name: " + db + "." + table);
         }
@@ -122,6 +135,9 @@ public final class StreamLoadClient implements Closeable {
             put.setHeader("strip_outer_array", "true");
             put.setHeader("columns", columns);
             put.setHeader("timeout", String.valueOf(Math.max(1, loadTimeout.getSeconds())));
+            if (tolerateFilteredRows) {
+                put.setHeader("max_filter_ratio", "1");
+            }
             put.setEntity(new ByteArrayEntity(body, ContentType.APPLICATION_JSON));
             Response response;
             try {
@@ -160,20 +176,113 @@ public final class StreamLoadClient implements Closeable {
         }
         String status = node.path("Status").asText("");
         long rows = node.path("NumberLoadedRows").asLong(0);
+        long filtered = node.path("NumberFilteredRows").asLong(0);
+        String errorUrl = node.path("ErrorURL").asText("");
         switch (status) {
             case "Success":
             case "Publish Timeout":
-                return new Result(label, false, rows);
+                return new Result(label, false, rows, filtered, errorUrl);
             case "Label Already Exists":
                 String existing = node.path("ExistingJobStatus").asText("").toUpperCase(Locale.ROOT);
                 if ("FINISHED".equals(existing) || "VISIBLE".equals(existing) || "COMMITTED".equals(existing)) {
-                    return new Result(label, true, 0L);
+                    return new Result(label, true, 0L, 0L, "");
                 }
                 throw new PipelineException("stream load label " + label + " exists with job status '" + existing
                         + "', retry later");
             default:
+                String message = node.path("Message").asText("");
+                if (filtered > 0) {
+                    throw new DataQualityException("stream load " + label + " rejected " + filtered + " row(s): "
+                            + message + ", errorUrl=" + errorUrl, label, filtered, errorUrl);
+                }
                 throw new PipelineException("stream load " + label + " failed: status=" + status + ", message="
-                        + node.path("Message").asText("") + ", errorUrl=" + node.path("ErrorURL").asText(""));
+                        + message + ", errorUrl=" + errorUrl);
+        }
+    }
+
+    /**
+     * State of a load label ({@code GET /api/{db}/get_load_state?label=}), for Stream Load and labelled
+     * {@code INSERT} alike. The FE forgets labels after {@code label_keep_max_second} (3 days by default in 3.1):
+     * {@link LoadState#UNKNOWN} then means "never existed <i>or</i> expired".
+     */
+    public LoadState loadState(String db, String label) {
+        if (!NAME.matcher(db).matches() || !LABEL.matcher(label).matches()) {
+            throw new IllegalArgumentException("invalid database / label: " + db + " / " + label);
+        }
+        HttpGet get = new HttpGet(feHttpUrl.resolve("/api/" + db + "/get_load_state?label=" + label));
+        get.setHeader("Authorization", authorization);
+        get.setHeader("Connection", "close");
+        String body;
+        try {
+            body = http.execute(get, r -> r.getEntity() == null ? "" : EntityUtils.toString(r.getEntity(),
+                    StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            throw new PipelineException("get_load_state " + label + " failed: " + e.getMessage(), e);
+        }
+        try {
+            String state = json.readTree(body).path("state").asText("").toUpperCase(Locale.ROOT);
+            switch (state) {
+                case "VISIBLE":
+                case "COMMITTED":
+                case "FINISHED":
+                    return LoadState.COMMITTED;
+                case "PREPARE":
+                case "PREPARED":
+                case "LOADING":
+                    return LoadState.IN_PROGRESS;
+                case "ABORTED":
+                case "CANCELLED":
+                    return LoadState.ABORTED;
+                case "UNKNOWN":
+                    return LoadState.UNKNOWN;
+                default:
+                    throw new PipelineException("get_load_state " + label + ": unexpected answer " + body);
+            }
+        } catch (IOException e) {
+            throw new PipelineException("get_load_state " + label + ": unreadable answer " + body, e);
+        }
+    }
+
+    /**
+     * Label state as seen by the FE.
+     */
+    public enum LoadState {
+        /** Committed (visible now or after publish): the step is done. */
+        COMMITTED,
+        /** Still running: retry later. */
+        IN_PROGRESS,
+        /** Known and aborted: nothing was loaded, the label may be reused. */
+        ABORTED,
+        /** Never used, or forgotten after the label retention. */
+        UNKNOWN
+    }
+
+    /**
+     * Rows rejected by StarRocks (data quality); retrying the same data fails identically.
+     */
+    public static final class DataQualityException extends PipelineException {
+        private static final long serialVersionUID = 1L;
+        private final String label;
+        private final long filteredRows;
+        private final String errorUrl;
+
+        DataQualityException(String message, String label, long filteredRows, String errorUrl) {
+            super(message, null, false);
+            this.label = label;
+            this.filteredRows = filteredRows;
+            this.errorUrl = errorUrl;
+        }
+
+        public String getLabel() {
+            return label;
+        }
+
+        public long getFilteredRows() {
+            return filteredRows;
+        }
+
+        public String getErrorUrl() {
+            return errorUrl;
         }
     }
 
@@ -201,11 +310,15 @@ public final class StreamLoadClient implements Closeable {
         private final String label;
         private final boolean alreadyLoaded;
         private final long loadedRows;
+        private final long filteredRows;
+        private final String errorUrl;
 
-        Result(String label, boolean alreadyLoaded, long loadedRows) {
+        Result(String label, boolean alreadyLoaded, long loadedRows, long filteredRows, String errorUrl) {
             this.label = label;
             this.alreadyLoaded = alreadyLoaded;
             this.loadedRows = loadedRows;
+            this.filteredRows = filteredRows;
+            this.errorUrl = errorUrl;
         }
 
         public String getLabel() {
@@ -219,6 +332,15 @@ public final class StreamLoadClient implements Closeable {
 
         public long getLoadedRows() {
             return loadedRows;
+        }
+
+        /** @return rows dropped by a tolerant load */
+        public long getFilteredRows() {
+            return filteredRows;
+        }
+
+        public String getErrorUrl() {
+            return errorUrl;
         }
     }
 }

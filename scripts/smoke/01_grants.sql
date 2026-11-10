@@ -1,5 +1,5 @@
 -- =====================================================================================================================
--- Smoke test step 2 (run as an admin account AFTER sql/ddl/00..05 have been executed)
+-- Smoke test step 2 (run as an admin account AFTER sql/ddl/00..09 have been executed)
 -- Pipeline account: reads the audit table, sees metadata of every business table, writes audit_lineage_db.
 -- Adjust to your security policy; the hard requirement is that information_schema.columns / DESC show every
 -- table the audited users query (StarRocks only lists objects the account has a privilege on).

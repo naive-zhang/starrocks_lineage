@@ -2,13 +2,14 @@ package com.starrocks.lineage.pipeline;
 
 import com.starrocks.lineage.model.ParseStatus;
 
+import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.Map;
 import java.util.Optional;
 
 /**
- * Result of one pipeline cycle.
+ * Result of one pipeline cycle or operation.
  */
 public final class CycleReport {
 
@@ -16,53 +17,90 @@ public final class CycleReport {
      * Cycle outcome.
      */
     public enum Outcome {
-        /** A batch was written and the watermark advanced. */
+        /** A batch was written and committed. */
         COMMITTED,
-        /** Nothing new to process. */
+        /** Nothing to process. */
         IDLE,
         /** Another instance holds the lease. */
-        LEASE_NOT_ACQUIRED
+        LEASE_NOT_ACQUIRED,
+        /** The pending batch fails with a non-retryable error; an operator has to decide (see the message). */
+        BLOCKED
     }
 
     private final Outcome outcome;
+    private final BatchKind kind;
     private final String batchId;
+    private final LocalDateTime rangeStart;
+    private final LocalDateTime rangeEnd;
     private final int records;
     private final Map<ParseStatus, Integer> statuses;
     private final int usageRows;
     private final int lineageRows;
-    private final int newUsers;
-    private final Watermark watermark;
+    private final int deadLetters;
+    private final long filteredRows;
     private final boolean replay;
+    private final String message;
 
-    CycleReport(Outcome outcome, String batchId, int records, Map<ParseStatus, Integer> statuses, int usageRows,
-                int lineageRows, int newUsers, Watermark watermark, boolean replay) {
+    private CycleReport(Outcome outcome, BatchKind kind, String batchId, LocalDateTime rangeStart,
+                        LocalDateTime rangeEnd, int records, Map<ParseStatus, Integer> statuses, int usageRows,
+                        int lineageRows, int deadLetters, long filteredRows, boolean replay, String message) {
         this.outcome = outcome;
+        this.kind = kind;
         this.batchId = batchId;
+        this.rangeStart = rangeStart;
+        this.rangeEnd = rangeEnd;
         this.records = records;
         Map<ParseStatus, Integer> s = new EnumMap<>(ParseStatus.class);
         s.putAll(statuses);
         this.statuses = Collections.unmodifiableMap(s);
         this.usageRows = usageRows;
         this.lineageRows = lineageRows;
-        this.newUsers = newUsers;
-        this.watermark = watermark;
+        this.deadLetters = deadLetters;
+        this.filteredRows = filteredRows;
         this.replay = replay;
+        this.message = message;
     }
 
-    static CycleReport idle(Watermark watermark) {
-        return new CycleReport(Outcome.IDLE, null, 0, Collections.emptyMap(), 0, 0, 0, watermark, false);
+    static CycleReport committed(CheckpointStore.PendingBatch batch, int records, Map<ParseStatus, Integer> statuses,
+                                 int usageRows, int lineageRows, int deadLetters, long filteredRows, boolean replay) {
+        return new CycleReport(Outcome.COMMITTED, batch.getKind(), batch.getBatchId(), batch.getRangeStart(),
+                batch.getRangeEnd(), records, statuses, usageRows, lineageRows, deadLetters, filteredRows, replay,
+                null);
+    }
+
+    static CycleReport idle(String message) {
+        return new CycleReport(Outcome.IDLE, null, null, null, null, 0, Collections.emptyMap(), 0, 0, 0, 0, false,
+                message);
     }
 
     static CycleReport leaseNotAcquired() {
-        return new CycleReport(Outcome.LEASE_NOT_ACQUIRED, null, 0, Collections.emptyMap(), 0, 0, 0, null, false);
+        return new CycleReport(Outcome.LEASE_NOT_ACQUIRED, null, null, null, null, 0, Collections.emptyMap(), 0, 0,
+                0, 0, false, null);
+    }
+
+    static CycleReport blocked(CheckpointStore.PendingBatch batch, String message) {
+        return new CycleReport(Outcome.BLOCKED, batch.getKind(), batch.getBatchId(), batch.getRangeStart(),
+                batch.getRangeEnd(), 0, Collections.emptyMap(), 0, 0, 0, 0, true, message);
     }
 
     public Outcome getOutcome() {
         return outcome;
     }
 
+    public Optional<BatchKind> getKind() {
+        return Optional.ofNullable(kind);
+    }
+
     public Optional<String> getBatchId() {
         return Optional.ofNullable(batchId);
+    }
+
+    public Optional<LocalDateTime> getRangeStart() {
+        return Optional.ofNullable(rangeStart);
+    }
+
+    public Optional<LocalDateTime> getRangeEnd() {
+        return Optional.ofNullable(rangeEnd);
     }
 
     public int getRecords() {
@@ -81,23 +119,39 @@ public final class CycleReport {
         return lineageRows;
     }
 
-    public int getNewUsers() {
-        return newUsers;
+    public int getDeadLetters() {
+        return deadLetters;
     }
 
-    public Optional<Watermark> getWatermark() {
-        return Optional.ofNullable(watermark);
+    public long getFilteredRows() {
+        return filteredRows;
     }
 
-    /** @return {@code true} when the cycle replayed a pending batch of a failed cycle */
+    /** @return {@code true} when the cycle resumed a batch declared by an earlier (failed) cycle */
     public boolean isReplay() {
         return replay;
     }
 
+    public Optional<String> getMessage() {
+        return Optional.ofNullable(message);
+    }
+
     @Override
     public String toString() {
-        return "CycleReport{" + outcome + (batchId == null ? "" : ", batch=" + batchId) + ", records=" + records
-                + ", statuses=" + statuses + ", usageRows=" + usageRows + ", lineageRows=" + lineageRows
-                + ", newUsers=" + newUsers + ", watermark=" + watermark + (replay ? ", replay" : "") + '}';
+        StringBuilder sb = new StringBuilder("CycleReport{").append(outcome);
+        if (batchId != null) {
+            sb.append(", ").append(kind).append(' ').append(batchId).append(" [").append(rangeStart).append(", ")
+                    .append(rangeEnd).append(')');
+        }
+        sb.append(", records=").append(records).append(", statuses=").append(statuses).append(", usageRows=")
+                .append(usageRows).append(", lineageRows=").append(lineageRows).append(", deadLetters=")
+                .append(deadLetters).append(", filteredRows=").append(filteredRows);
+        if (replay) {
+            sb.append(", replay");
+        }
+        if (message != null) {
+            sb.append(", ").append(message);
+        }
+        return sb.append('}').toString();
     }
 }

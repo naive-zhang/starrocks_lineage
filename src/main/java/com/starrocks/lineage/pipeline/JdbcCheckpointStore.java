@@ -12,41 +12,36 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.UnaryOperator;
 
 /**
- * {@link CheckpointStore} on {@code audit_lineage_sync_checkpoint} (05_audit_lineage_sync_checkpoint.sql).
+ * {@link CheckpointStore} on {@code audit_lineage_sync_checkpoint} (one row per pipeline, PRIMARY KEY
+ * {@code pipeline_name}: an {@code INSERT} is an upsert).
  *
- * <p>Writes are plain {@code INSERT}s: on the StarRocks PRIMARY KEY table an insert is an upsert of the single row of
- * the pipeline. A commit is read back and verified: if the store did not persist it (e.g. a table created without
- * the primary key, which would append rows instead), the cycle fails loudly instead of replaying the same batch
- * forever (review R4-05).</p>
- *
- * <p>StarRocks has no row lock / compare-and-set, so the lease is <i>best effort</i>: acquire = read, refuse when a
- * foreign unexpired lease exists, write, re-read and verify ownership. Two instances racing inside the same few
- * milliseconds could both pass; the batch intent plus the idempotent sinks keep the data exactly-once even then,
- * so the lease protects throughput, not correctness.</p>
+ * <p>Every mutation is read-modify-write of the whole row, guarded by the lease owner, and read back: a write that
+ * did not persist (wrong table model) or that lost a race fails loudly. StarRocks has no compare-and-set, so the
+ * lease cannot exclude two writers racing inside the same milliseconds; the deterministic batch ids, the step
+ * labels and the idempotent refresh keep the data exactly-once even then, and {@link #verifyLease} before each
+ * write step stops an instance that lost its lease while paused.</p>
  */
 public final class JdbcCheckpointStore implements CheckpointStore {
 
-    private static final String SELECT = "SELECT watermark_time, watermark_query_id, owner, lease_expire_time, "
-            + "processed_rows, pending_batch_id, pending_end_time, pending_end_query_id FROM %s "
-            + "WHERE pipeline_name = ? ORDER BY update_time DESC, lease_expire_time DESC LIMIT 1";
-    private static final String INSERT = "%s INTO %s (pipeline_name, watermark_time, watermark_query_id, owner, "
-            + "lease_expire_time, processed_rows, pending_batch_id, pending_end_time, pending_end_query_id, "
-            + "update_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    private static final String COLUMNS = "pipeline_name, committed_until, coverage_start, owner, lease_expire_time, "
+            + "processed_rows, pending_batch_id, pending_kind, pending_start_time, pending_end_time, pending_step, "
+            + "pending_since, pending_attempts, last_error, last_reconcile_time, update_time, pipeline_epoch";
+    private static final int MAX_ERROR = 1000;
 
     private final DataSource dataSource;
-    private final String selectSql;
-    private final String insertSql;
+    private final String table;
     private final Clock clock;
+    private final String upsertVerb;
 
     public JdbcCheckpointStore(DataSource dataSource) {
         this(dataSource, "audit_lineage_db.audit_lineage_sync_checkpoint", Clock.systemDefaultZone(), "INSERT");
     }
 
     /**
-     * @param upsertVerb {@code INSERT} on the StarRocks PRIMARY KEY table (insert = upsert); the upsert verb of
-     *                   another engine (e.g. H2 {@code MERGE}) in tests
+     * @param upsertVerb {@code INSERT} on the StarRocks PRIMARY KEY table; another engine's upsert verb in tests
      */
     public JdbcCheckpointStore(DataSource dataSource, String table, Clock clock, String upsertVerb) {
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
@@ -56,117 +51,226 @@ public final class JdbcCheckpointStore implements CheckpointStore {
         if (!upsertVerb.matches("[A-Z]+")) {
             throw new IllegalArgumentException("invalid upsert verb: " + upsertVerb);
         }
-        this.selectSql = String.format(SELECT, table);
-        this.insertSql = String.format(INSERT, upsertVerb, table);
+        this.table = table;
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.upsertVerb = upsertVerb;
     }
 
     @Override
     public Optional<Checkpoint> load(String pipeline) {
-        return read(pipeline).map(r -> r.checkpoint);
+        return read(pipeline);
     }
 
     @Override
-    public boolean tryAcquireLease(String pipeline, String owner, Duration ttl, Watermark initial) {
-        LocalDateTime now = LocalDateTime.now(clock);
-        Optional<Row> existing = read(pipeline);
-        if (existing.isPresent() && foreignLease(existing.get(), owner, now)) {
+    public boolean tryAcquireLease(String pipeline, String owner, Duration ttl, LocalDateTime initialStart) {
+        LocalDateTime now = now();
+        Optional<Checkpoint> existing = read(pipeline);
+        if (existing.isPresent() && foreign(existing.get(), owner, now)) {
             return false;
         }
-        Checkpoint cp = existing.map(r -> r.checkpoint).orElse(new Checkpoint(initial, null, 0L));
-        write(pipeline, owner, now.plus(ttl), cp.getWatermark(), cp.getProcessedRows(),
-                cp.getPending().orElse(null), now);
-        return read(pipeline).map(r -> r.owner.equals(owner)).orElse(false);
+        Checkpoint base = existing.orElse(new Checkpoint(java.util.UUID.randomUUID().toString(), initialStart,
+                initialStart, null, 0L, null, owner, now));
+        write(pipeline, new Checkpoint(base.getEpoch(), base.getCommittedUntil(), base.getCoverageStart(),
+                base.getPending().orElse(null), base.getProcessedRows(), base.getLastReconcile().orElse(null), owner,
+                now.plus(ttl)));
+        return read(pipeline).map(c -> owner.equals(c.getOwner())).orElse(false);
+    }
+
+    @Override
+    public void verifyLease(String pipeline, String owner, Duration ttl) {
+        mutate(pipeline, owner, ttl, c -> c);
+    }
+
+    @Override
+    public void releaseLease(String pipeline, String owner) {
+        Optional<Checkpoint> c = read(pipeline);
+        if (c.isPresent() && owner.equals(c.get().getOwner())) {
+            write(pipeline, copy(c.get(), c.get().getPending().orElse(null), c.get().getCommittedUntil(),
+                    c.get().getProcessedRows(), c.get().getLastReconcile().orElse(null), owner, now()));
+        }
     }
 
     @Override
     public void savePending(String pipeline, String owner, Duration ttl, PendingBatch pending) {
-        LocalDateTime now = LocalDateTime.now(clock);
-        Row row = requireOwnRow(pipeline, owner, now);
-        write(pipeline, owner, now.plus(ttl), row.checkpoint.getWatermark(), row.checkpoint.getProcessedRows(),
-                pending, now);
+        Checkpoint after = mutate(pipeline, owner, ttl, c -> {
+            if (c.getPending().isPresent() && !c.getPending().get().getBatchId().equals(pending.getBatchId())) {
+                throw PipelineException.nonRetryable("batch " + c.getPending().get().getBatchId()
+                        + " is pending, cannot declare " + pending.getBatchId(), null);
+            }
+            return withPending(c, pending);
+        });
+        requirePending(after, pending.getBatchId());
     }
 
     @Override
-    public void commit(String pipeline, String owner, Duration ttl, Watermark watermark, long processedRows) {
-        LocalDateTime now = LocalDateTime.now(clock);
-        Row row = requireOwnRow(pipeline, owner, now);
-        write(pipeline, owner, now.plus(ttl), watermark, row.checkpoint.getProcessedRows() + processedRows, null, now);
-        Checkpoint stored = read(pipeline).map(r -> r.checkpoint).orElse(null);
-        if (stored == null || !stored.getWatermark().equals(watermark) || stored.getPending().isPresent()) {
-            throw new PipelineException("checkpoint commit of " + pipeline + " to " + watermark
-                    + " was not persisted (is pipeline_name the PRIMARY KEY?)");
+    public void advanceStep(String pipeline, String owner, Duration ttl, String batchId, BatchStep step) {
+        Checkpoint after = mutate(pipeline, owner, ttl, c -> {
+            PendingBatch p = requirePending(c, batchId);
+            return withPending(c, step.isAfter(p.getStep()) ? p.withStep(step) : p);
+        });
+        if (step.isAfter(requirePending(after, batchId).getStep())) {
+            throw new PipelineException("step " + step + " of batch " + batchId + " was not persisted");
         }
     }
 
-    private Row requireOwnRow(String pipeline, String owner, LocalDateTime now) {
-        Row row = read(pipeline).orElseThrow(() -> new PipelineException("no checkpoint for pipeline " + pipeline));
-        if (foreignLease(row, owner, now)) {
-            throw new PipelineException("lease of pipeline " + pipeline + " is held by " + row.owner);
+    @Override
+    public void restartPendingClock(String pipeline, String owner, Duration ttl, String batchId) {
+        mutate(pipeline, owner, ttl, c -> withPending(c, requirePending(c, batchId).withSince(now())));
+    }
+
+    @Override
+    public void recordFailure(String pipeline, String owner, Duration ttl, String batchId, String error) {
+        String e = error == null ? "" : (error.length() > MAX_ERROR ? error.substring(0, MAX_ERROR) : error);
+        mutate(pipeline, owner, ttl, c -> withPending(c, requirePending(c, batchId).withFailure(e)));
+    }
+
+    @Override
+    public void commit(String pipeline, String owner, Duration ttl, String batchId, LocalDateTime newCommittedUntil,
+                       long records) {
+        Checkpoint after = mutate(pipeline, owner, ttl, c -> {
+            requirePending(c, batchId);
+            LocalDateTime until = c.getCommittedUntil();
+            if (newCommittedUntil != null) {
+                if (newCommittedUntil.isBefore(until)) {
+                    throw PipelineException.nonRetryable("watermark of " + pipeline + " would move backwards from "
+                            + until + " to " + newCommittedUntil, null);
+                }
+                until = newCommittedUntil;
+            }
+            return copy(c, null, until, c.getProcessedRows() + records, c.getLastReconcile().orElse(null), owner,
+                    c.getLeaseExpire());
+        });
+        if (after.getPending().isPresent()
+                || (newCommittedUntil != null && !after.getCommittedUntil().equals(newCommittedUntil))) {
+            throw PipelineException.nonRetryable("checkpoint commit of " + pipeline + " batch " + batchId
+                    + " was not persisted (is pipeline_name the PRIMARY KEY?)", null);
         }
-        return row;
     }
 
-    private static boolean foreignLease(Row row, String owner, LocalDateTime now) {
-        return !row.owner.equals(owner) && row.leaseExpire.isAfter(now);
+    @Override
+    public void markReconciled(String pipeline, String owner, Duration ttl, LocalDateTime at) {
+        mutate(pipeline, owner, ttl, c -> copy(c, c.getPending().orElse(null), c.getCommittedUntil(),
+                c.getProcessedRows(), at, owner, c.getLeaseExpire()));
     }
 
-    private Optional<Row> read(String pipeline) {
-        try (Connection c = dataSource.getConnection(); PreparedStatement ps = c.prepareStatement(selectSql)) {
+    // ------------------------------------------------------------------------------------------------ internals
+
+    private Checkpoint mutate(String pipeline, String owner, Duration ttl, UnaryOperator<Checkpoint> change) {
+        LocalDateTime now = now();
+        Checkpoint current = read(pipeline).orElseThrow(() -> PipelineException.nonRetryable(
+                "no checkpoint for pipeline " + pipeline, null));
+        if (!owner.equals(current.getOwner())) {
+            if (current.getLeaseExpire().isAfter(now)) {
+                throw new LeaseLostException("lease of pipeline " + pipeline + " is held by " + current.getOwner());
+            }
+            throw new LeaseLostException("lease of pipeline " + pipeline + " expired and was taken by "
+                    + current.getOwner());
+        }
+        Checkpoint changed = change.apply(current);
+        Checkpoint renewed = copy(changed, changed.getPending().orElse(null), changed.getCommittedUntil(),
+                changed.getProcessedRows(), changed.getLastReconcile().orElse(null), owner, now.plus(ttl));
+        write(pipeline, renewed);
+        Checkpoint stored = read(pipeline).orElseThrow(() -> PipelineException.nonRetryable(
+                "checkpoint of " + pipeline + " vanished", null));
+        if (!owner.equals(stored.getOwner())) {
+            throw new LeaseLostException("lease of pipeline " + pipeline + " was taken by " + stored.getOwner()
+                    + " concurrently");
+        }
+        return stored;
+    }
+
+    private static boolean foreign(Checkpoint c, String owner, LocalDateTime now) {
+        return !owner.equals(c.getOwner()) && c.getLeaseExpire().isAfter(now);
+    }
+
+    private static PendingBatch requirePending(Checkpoint c, String batchId) {
+        PendingBatch p = c.getPending().orElseThrow(() -> PipelineException.nonRetryable(
+                "no pending batch (expected " + batchId + ")", null));
+        if (!p.getBatchId().equals(batchId)) {
+            throw PipelineException.nonRetryable("pending batch is " + p.getBatchId() + ", not " + batchId, null);
+        }
+        return p;
+    }
+
+    private static Checkpoint withPending(Checkpoint c, PendingBatch p) {
+        return copy(c, p, c.getCommittedUntil(), c.getProcessedRows(), c.getLastReconcile().orElse(null),
+                c.getOwner(), c.getLeaseExpire());
+    }
+
+    private static Checkpoint copy(Checkpoint c, PendingBatch p, LocalDateTime until, long processed,
+                                   LocalDateTime reconcile, String owner, LocalDateTime leaseExpire) {
+        return new Checkpoint(c.getEpoch(), until, c.getCoverageStart(), p, processed, reconcile, owner,
+                leaseExpire);
+    }
+
+    private LocalDateTime now() {
+        return LocalDateTime.now(clock).withNano(0);
+    }
+
+    private Optional<Checkpoint> read(String pipeline) {
+        String sql = "SELECT " + COLUMNS + " FROM " + table + " WHERE pipeline_name = ?";
+        try (Connection c = dataSource.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, pipeline);
             try (ResultSet rs = ps.executeQuery()) {
                 if (!rs.next()) {
                     return Optional.empty();
                 }
-                Watermark wm = new Watermark(rs.getTimestamp(1).toLocalDateTime(), rs.getString(2));
                 PendingBatch pending = null;
-                String batchId = rs.getString(6);
+                String batchId = rs.getString(7);
                 if (batchId != null && !batchId.isEmpty()) {
-                    pending = new PendingBatch(batchId, new Watermark(rs.getTimestamp(7).toLocalDateTime(),
-                            rs.getString(8)));
+                    pending = new PendingBatch(batchId, BatchKind.valueOf(rs.getString(8)), ts(rs, 9), ts(rs, 10),
+                            BatchStep.valueOf(rs.getString(11)), ts(rs, 12), rs.getInt(13), rs.getString(14));
                 }
-                return Optional.of(new Row(new Checkpoint(wm, pending, rs.getLong(5)), rs.getString(3),
-                        rs.getTimestamp(4).toLocalDateTime()));
+                return Optional.of(new Checkpoint(rs.getString(17), ts(rs, 2), ts(rs, 3), pending, rs.getLong(6),
+                        ts(rs, 15),
+                        rs.getString(4), ts(rs, 5)));
             }
         } catch (SQLException e) {
             throw new PipelineException("checkpoint read failed: " + e.getMessage(), e);
         }
     }
 
-    private void write(String pipeline, String owner, LocalDateTime leaseExpire, Watermark wm, long processed,
-                       PendingBatch pending, LocalDateTime now) {
-        try (Connection c = dataSource.getConnection(); PreparedStatement ps = c.prepareStatement(insertSql)) {
+    private static LocalDateTime ts(ResultSet rs, int i) throws SQLException {
+        Timestamp t = rs.getTimestamp(i);
+        return t == null ? null : t.toLocalDateTime();
+    }
+
+    private void write(String pipeline, Checkpoint c) {
+        String sql = upsertVerb + " INTO " + table + " (" + COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+                + "?, ?, ?, ?, ?)";
+        try (Connection conn = dataSource.getConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, pipeline);
-            ps.setTimestamp(2, Timestamp.valueOf(wm.getTimestamp()));
-            ps.setString(3, wm.getQueryId());
-            ps.setString(4, owner);
-            ps.setTimestamp(5, Timestamp.valueOf(leaseExpire));
-            ps.setLong(6, processed);
-            if (pending == null) {
-                ps.setNull(7, Types.VARCHAR);
-                ps.setNull(8, Types.TIMESTAMP);
-                ps.setNull(9, Types.VARCHAR);
+            ps.setTimestamp(2, Timestamp.valueOf(c.getCommittedUntil()));
+            ps.setTimestamp(3, Timestamp.valueOf(c.getCoverageStart()));
+            ps.setString(4, c.getOwner());
+            ps.setTimestamp(5, Timestamp.valueOf(c.getLeaseExpire()));
+            ps.setLong(6, c.getProcessedRows());
+            PendingBatch p = c.getPending().orElse(null);
+            if (p == null) {
+                for (int i = 7; i <= 14; i++) {
+                    ps.setNull(i, i == 13 ? Types.INTEGER : (i == 9 || i == 10 || i == 12 ? Types.TIMESTAMP
+                            : Types.VARCHAR));
+                }
             } else {
-                ps.setString(7, pending.getBatchId());
-                ps.setTimestamp(8, Timestamp.valueOf(pending.getEnd().getTimestamp()));
-                ps.setString(9, pending.getEnd().getQueryId());
+                ps.setString(7, p.getBatchId());
+                ps.setString(8, p.getKind().name());
+                ps.setTimestamp(9, Timestamp.valueOf(p.getRangeStart()));
+                ps.setTimestamp(10, Timestamp.valueOf(p.getRangeEnd()));
+                ps.setString(11, p.getStep().name());
+                ps.setTimestamp(12, Timestamp.valueOf(p.getSince()));
+                ps.setInt(13, p.getAttempts());
+                ps.setString(14, p.getLastError().orElse(null));
             }
-            ps.setTimestamp(10, Timestamp.valueOf(now));
+            if (c.getLastReconcile().isPresent()) {
+                ps.setTimestamp(15, Timestamp.valueOf(c.getLastReconcile().get()));
+            } else {
+                ps.setNull(15, Types.TIMESTAMP);
+            }
+            ps.setTimestamp(16, Timestamp.valueOf(now()));
+            ps.setString(17, c.getEpoch());
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new PipelineException("checkpoint write failed: " + e.getMessage(), e);
-        }
-    }
-
-    private static final class Row {
-        private final Checkpoint checkpoint;
-        private final String owner;
-        private final LocalDateTime leaseExpire;
-
-        Row(Checkpoint checkpoint, String owner, LocalDateTime leaseExpire) {
-            this.checkpoint = checkpoint;
-            this.owner = owner;
-            this.leaseExpire = leaseExpire;
         }
     }
 }

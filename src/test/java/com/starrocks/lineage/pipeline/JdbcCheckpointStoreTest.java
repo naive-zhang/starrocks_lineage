@@ -6,9 +6,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -17,53 +15,116 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class JdbcCheckpointStoreTest {
 
-    private static final String TABLE = "audit_lineage_db.audit_lineage_sync_checkpoint";
-    private FakeStarRocks sr;
+    private static final Duration TTL = Duration.ofMinutes(10);
+    private static final LocalDateTime START = LocalDateTime.of(2024, 6, 17, 0, 0);
+    private static final LocalDateTime NOW = LocalDateTime.of(2024, 6, 18, 12, 0);
+
+    private H2Checkpoints h2;
+    private MutableClock clock;
+    private JdbcCheckpointStore store;
 
     @BeforeEach
     void setUp() throws Exception {
-        sr = new FakeStarRocks();
+        h2 = new H2Checkpoints();
+        clock = new MutableClock(NOW);
+        store = h2.store(clock);
     }
 
     @AfterEach
     void tearDown() throws Exception {
-        sr.close();
-    }
-
-    private JdbcCheckpointStore at(String instant) {
-        return new JdbcCheckpointStore(sr.dataSource, TABLE, Clock.fixed(Instant.parse(instant), ZoneId.of("UTC")),
-                "MERGE");
+        h2.close();
     }
 
     @Test
-    void leaseLifecycleIntentAndTakeoverAfterExpiry() {
-        Watermark start = Watermark.startingAt(LocalDateTime.of(2024, 6, 1, 0, 0));
-        JdbcCheckpointStore a = at("2024-06-18T12:00:00Z");
-        assertFalse(a.load("p").isPresent());
-        assertTrue(a.tryAcquireLease("p", "node-a", Duration.ofMinutes(10), start));
-        assertEquals(start, a.load("p").get().getWatermark());
+    void firstLeaseCreatesTheCheckpointAtTheInitialStart() {
+        assertFalse(store.load("p").isPresent());
+        assertTrue(store.tryAcquireLease("p", "a", TTL, START));
+        CheckpointStore.Checkpoint cp = store.load("p").get();
+        assertEquals(START, cp.getCommittedUntil());
+        assertEquals(START, cp.getCoverageStart());
+        assertEquals("a", cp.getOwner());
+        assertEquals(NOW.plus(TTL), cp.getLeaseExpire());
+        assertFalse(cp.getPending().isPresent());
+        assertFalse(cp.getLastReconcile().isPresent());
+        assertTrue(store.tryAcquireLease("p", "a", TTL, START.minusDays(5)), "renewal");
+        assertEquals(START, store.load("p").get().getCoverageStart(), "initial start only applies once");
+        assertEquals(cp.getEpoch(), store.load("p").get().getEpoch(), "the epoch is created once");
+        assertEquals(36, cp.getEpoch().length());
+    }
 
-        CheckpointStore.PendingBatch pending = new CheckpointStore.PendingBatch("b1",
-                new Watermark(LocalDateTime.of(2024, 6, 18, 11, 0), "q9"));
-        a.savePending("p", "node-a", Duration.ofMinutes(10), pending);
-        assertEquals(pending, a.load("p").get().getPending().get());
+    @Test
+    void pendingBatchStepsFailuresAndCommit() {
+        store.tryAcquireLease("p", "a", TTL, START);
+        CheckpointStore.PendingBatch b = CheckpointStore.PendingBatch.declare("b1", BatchKind.SLICE, START,
+                START.plusMinutes(5), NOW);
+        store.savePending("p", "a", TTL, b);
+        assertEquals(b, store.load("p").get().getPending().get());
+        assertThrows(PipelineException.class, () -> store.savePending("p", "a", TTL,
+                CheckpointStore.PendingBatch.declare("b2", BatchKind.SLICE, START, START, NOW)),
+                "one pending batch at a time");
 
-        JdbcCheckpointStore bSoon = at("2024-06-18T12:05:00Z");
-        assertFalse(bSoon.tryAcquireLease("p", "node-b", Duration.ofMinutes(10), start), "lease still alive");
-        assertThrows(PipelineException.class, () -> bSoon.commit("p", "node-b", Duration.ofMinutes(10),
-                pending.getEnd(), 1));
+        store.advanceStep("p", "a", TTL, "b1", BatchStep.PREPARE);
+        store.advanceStep("p", "a", TTL, "b1", BatchStep.USAGE);
+        store.advanceStep("p", "a", TTL, "b1", BatchStep.DICTIONARY);
+        assertEquals(BatchStep.USAGE, store.load("p").get().getPending().get().getStep(), "steps never go back");
+        assertThrows(PipelineException.class, () -> store.advanceStep("p", "a", TTL, "other", BatchStep.REFRESH));
 
-        JdbcCheckpointStore bLater = at("2024-06-18T12:11:00Z");
-        assertTrue(bLater.tryAcquireLease("p", "node-b", Duration.ofMinutes(10), start), "expired lease taken over");
-        CheckpointStore.Checkpoint taken = bLater.load("p").get();
-        assertEquals(pending, taken.getPending().get(), "the new owner inherits the intent and replays it");
-        bLater.commit("p", "node-b", Duration.ofMinutes(10), pending.getEnd(), 42);
-        CheckpointStore.Checkpoint committed = bLater.load("p").get();
-        assertEquals(pending.getEnd(), committed.getWatermark());
-        assertFalse(committed.getPending().isPresent());
-        assertEquals(42, committed.getProcessedRows());
-        assertFalse(at("2024-06-18T12:12:00Z").tryAcquireLease("p", "node-a", Duration.ofMinutes(10), start));
+        store.recordFailure("p", "a", TTL, "b1", "boom");
+        store.recordFailure("p", "a", TTL, "b1", new String(new char[5000]).replace('\0', 'x'));
+        CheckpointStore.PendingBatch failed = store.load("p").get().getPending().get();
+        assertEquals(2, failed.getAttempts());
+        assertEquals(1000, failed.getLastError().get().length());
+
+        clock.advance(Duration.ofHours(1));
+        store.restartPendingClock("p", "a", TTL, "b1");
+        assertEquals(NOW.plusHours(1), store.load("p").get().getPending().get().getSince());
+
+        store.commit("p", "a", TTL, "b1", START.plusMinutes(5), 42);
+        CheckpointStore.Checkpoint cp = store.load("p").get();
+        assertEquals(START.plusMinutes(5), cp.getCommittedUntil());
+        assertFalse(cp.getPending().isPresent());
+        assertEquals(42, cp.getProcessedRows());
+
+        store.savePending("p", "a", TTL, CheckpointStore.PendingBatch.declare("late", BatchKind.LATE, START,
+                START.plusMinutes(5), NOW));
+        store.commit("p", "a", TTL, "late", null, 3);
+        assertEquals(START.plusMinutes(5), store.load("p").get().getCommittedUntil(), "LATE does not move it");
+        assertEquals(45, store.load("p").get().getProcessedRows());
+
+        store.savePending("p", "a", TTL, CheckpointStore.PendingBatch.declare("back", BatchKind.SLICE, START,
+                START, NOW));
+        assertThrows(PipelineException.class, () -> store.commit("p", "a", TTL, "back", START, 0),
+                "the watermark never moves backwards");
+        store.markReconciled("p", "a", TTL, NOW);
+        assertEquals(NOW, store.load("p").get().getLastReconcile().get());
+    }
+
+    /** Gap 3: fencing - a paused owner cannot write after a take-over, and a released lease is free at once. */
+    @Test
+    void leaseFencingTakeoverAndRelease() {
+        store.tryAcquireLease("p", "a", TTL, START);
+        store.savePending("p", "a", TTL, CheckpointStore.PendingBatch.declare("b1", BatchKind.SLICE, START,
+                START.plusMinutes(5), NOW));
+        JdbcCheckpointStore b = h2.store(clock);
+        assertFalse(b.tryAcquireLease("p", "b", TTL, START), "lease still alive");
+        assertThrows(LeaseLostException.class, () -> b.verifyLease("p", "b", TTL));
+
+        clock.advance(TTL.plusSeconds(1));
+        assertTrue(b.tryAcquireLease("p", "b", TTL, START), "expired lease is taken over");
+        assertEquals("b1", b.load("p").get().getPending().get().getBatchId(), "the new owner inherits the batch");
+
+        LeaseLostException lost = assertThrows(LeaseLostException.class,
+                () -> store.verifyLease("p", "a", TTL));
+        assertFalse(lost.isRetryable());
+        assertThrows(LeaseLostException.class, () -> store.advanceStep("p", "a", TTL, "b1", BatchStep.PREPARE));
+        assertThrows(LeaseLostException.class, () -> store.commit("p", "a", TTL, "b1", START.plusMinutes(5), 1));
+        assertEquals(BatchStep.INTENT, b.load("p").get().getPending().get().getStep(), "zombie wrote nothing");
+
+        b.releaseLease("p", "b");
+        assertTrue(store.tryAcquireLease("p", "a", TTL, START), "released lease is free immediately");
+        store.releaseLease("p", "someone-else");
+        assertEquals("a", store.load("p").get().getOwner(), "only the owner can release");
         assertThrows(IllegalArgumentException.class,
-                () -> new JdbcCheckpointStore(sr.dataSource, "x; drop", Clock.systemUTC(), "INSERT"));
+                () -> new JdbcCheckpointStore(h2.dataSource, "x; drop", Clock.systemUTC(), "INSERT"));
     }
 }

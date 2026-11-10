@@ -6,8 +6,8 @@ int analyzeSample() {
         checkClock(ds);
         StarRocksSqlAnalyzer analyzer = new StarRocksSqlAnalyzer(new JdbcStarRocksMetadataProvider(ds));
         LocalDateTime now = LocalDateTime.now();
-        List<AuditLogRecord> records = new JdbcAuditLogSource(ds).fetch(
-                Watermark.startingAt(now.minusHours(Long.parseLong(env("SMOKE_LOOKBACK_HOURS", "1")))), now,
+        LocalDateTime from = now.minusHours(Long.parseLong(env("SMOKE_LOOKBACK_HOURS", "1")));
+        List<AuditLogRecord> records = new JdbcAuditLogSource(ds).fetchRange(from, now, Watermark.startingAt(from),
                 Integer.parseInt(env("SMOKE_SAMPLE", "2000")));
         Map<ParseStatus, Integer> counts = new EnumMap<>(ParseStatus.class);
         Map<String, Integer> warnings = new TreeMap<>();

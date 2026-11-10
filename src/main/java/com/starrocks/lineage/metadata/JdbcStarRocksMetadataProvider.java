@@ -7,6 +7,9 @@ import com.starrocks.lineage.model.Identifiers;
 import com.starrocks.lineage.model.TableIdentifier;
 
 import javax.sql.DataSource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -41,6 +44,8 @@ import java.util.concurrent.CompletionException;
  * </ul>
  */
 public final class JdbcStarRocksMetadataProvider implements MetadataProvider {
+
+    private static final Logger LOG = LoggerFactory.getLogger(JdbcStarRocksMetadataProvider.class);
 
     static final String INFORMATION_SCHEMA_SQL =
             "SELECT COLUMN_NAME, ORDINAL_POSITION, DATA_TYPE, IS_NULLABLE FROM information_schema.columns "
@@ -103,6 +108,12 @@ public final class JdbcStarRocksMetadataProvider implements MetadataProvider {
             if (isNotFound(e)) {
                 return Optional.empty();
             }
+            if (isAccessDenied(e)) {
+                // the same answer on every retry: treat like an unknown table (the analysis degrades with a
+                // warning) instead of failing the batch forever
+                LOG.warn("no privilege to read metadata of {}: {}", table, e.getMessage());
+                return Optional.empty();
+            }
             throw new MetadataAccessException("Failed to load metadata of " + table + ": " + e.getMessage(), e);
         }
     }
@@ -163,6 +174,19 @@ public final class JdbcStarRocksMetadataProvider implements MetadataProvider {
         String msg = e.getMessage() == null ? "" : e.getMessage().toLowerCase(Locale.ROOT);
         return msg.contains("unknown table") || msg.contains("unknown database") || msg.contains("not exist")
                 || msg.contains("not found") || msg.contains("unknown catalog");
+    }
+
+    /**
+     * Classifies privilege errors: MySQL 1044 (database), 1142 (table), 1227 (operation) or an "access denied"
+     * message.
+     */
+    static boolean isAccessDenied(SQLException e) {
+        int code = e.getErrorCode();
+        if (code == 1044 || code == 1142 || code == 1227) {
+            return true;
+        }
+        String msg = e.getMessage() == null ? "" : e.getMessage().toLowerCase(Locale.ROOT);
+        return msg.contains("access denied");
     }
 
     /**

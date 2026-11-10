@@ -4,6 +4,8 @@ import com.starrocks.lineage.model.AuditLogRecord;
 import com.starrocks.lineage.model.ColumnLineageEdge;
 import com.starrocks.lineage.model.SqlParseResult;
 
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -14,13 +16,13 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
- * Batch pre-aggregation of lineage edges keyed by the edge identity ({@link ColumnLineageEdge#equals}: target,
- * source, lineage type - full equality, not a hash). Same concurrency model as {@link HourlyUsageAggregator}.
+ * Batch pre-aggregation of lineage keyed by {@code (day of the statement, edge identity)} - full equality, never a
+ * hash. Same concurrency model as {@link HourlyUsageAggregator}.
  */
 public final class LineageAggregator {
 
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
-    private volatile ConcurrentMap<ColumnLineageEdge, LineageRow> current = new ConcurrentHashMap<>();
+    private volatile ConcurrentMap<Key, LineageRow> current = new ConcurrentHashMap<>();
 
     /**
      * @return number of edges added; {@code 0} when the result carries no lineage
@@ -31,13 +33,14 @@ public final class LineageAggregator {
                 || !result.getStatementType().isPresent()) {
             return 0;
         }
+        LocalDateTime day = record.getTimestamp().truncatedTo(ChronoUnit.DAYS);
         lock.readLock().lock();
         try {
-            ConcurrentMap<ColumnLineageEdge, LineageRow> map = current;
+            ConcurrentMap<Key, LineageRow> map = current;
             for (ColumnLineageEdge edge : result.getLineageEdges()) {
-                LineageRow row = new LineageRow(edge, result.getStatementType().get(), record.getDigest(),
+                LineageRow row = new LineageRow(day, edge, result.getStatementType().get(), record.getDigest(),
                         record.getQueryId(), record.effectiveUser(), record.getTimestamp(), record.getTimestamp(), 1L);
-                map.merge(edge, row, LineageRow::merge);
+                map.merge(new Key(day, edge), row, LineageRow::merge);
             }
         } finally {
             lock.readLock().unlock();
@@ -49,9 +52,9 @@ public final class LineageAggregator {
         return current.size();
     }
 
-    /** @return the batch rows (sorted by edge id) and resets the aggregator atomically */
+    /** @return the batch rows (sorted by day and edge id) and resets the aggregator atomically */
     public List<LineageRow> drain() {
-        ConcurrentMap<ColumnLineageEdge, LineageRow> snapshot;
+        ConcurrentMap<Key, LineageRow> snapshot;
         lock.writeLock().lock();
         try {
             snapshot = current;
@@ -60,7 +63,31 @@ public final class LineageAggregator {
             lock.writeLock().unlock();
         }
         List<LineageRow> rows = new ArrayList<>(snapshot.values());
-        rows.sort(Comparator.comparing(LineageRow::getEdgeId));
+        rows.sort(Comparator.comparing(LineageRow::getStatDay).thenComparing(LineageRow::getEdgeId));
         return rows;
+    }
+
+    private static final class Key {
+        private final LocalDateTime day;
+        private final ColumnLineageEdge edge;
+
+        Key(LocalDateTime day, ColumnLineageEdge edge) {
+            this.day = day;
+            this.edge = edge;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (!(o instanceof Key)) {
+                return false;
+            }
+            Key k = (Key) o;
+            return day.equals(k.day) && edge.equals(k.edge);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(day, edge);
+        }
     }
 }

@@ -6,6 +6,10 @@ branch-3.1 ANTLR4 grammar and produces:
 - `audit_column_lineage`: column-level lineage of write statements (INSERT, CTAS, views, materialized views, UPDATE, DELETE, SUBMIT TASK);
 - `audit_column_hourly_usage`: hourly column access statistics of queries (clause frequencies, exact and approximate distinct users, resource water levels).
 
+Batches are exactly-once under crashes, restarts, take-overs and replays after the StarRocks label retention; late
+audit records are reconciled, failed records are kept as dead letters and can be repaired, and whole days can be
+rebuilt (Stage 5).
+
 ## Build
 
 Requires JDK 11+ and Maven 3.6+.
@@ -20,7 +24,7 @@ Integration tests against a real StarRocks 3.1.17 started with Testcontainers (r
 mvn verify -Pit
 ```
 
-See [docs/container-verification.md](docs/container-verification.md) for what the 34 container tests cover and
+See [docs/container-verification.md](docs/container-verification.md) for what the container tests cover and
 [docs/staging-smoke-test.md](docs/staging-smoke-test.md) for the staging smoke-test runbook (`scripts/smoke`).
 
 ## Layout
@@ -34,8 +38,9 @@ See [docs/container-verification.md](docs/container-verification.md) for what th
 | `src/main/java/com/starrocks/lineage/metadata/` | `MetadataProvider` with JDBC (Caffeine-cached) and in-memory implementations |
 | `src/main/java/com/starrocks/lineage/scope/` | Symbol table: `Scope` / `ScopeStack` / `RelationDescriptor` / `RelationField` / `FieldLineage` / `ExpressionSourceTracker` |
 | `src/main/java/com/starrocks/lineage/analyzer/` | `StarRocksAuditAstVisitor` (79 official visit methods) and the `StarRocksSqlAnalyzer` facade |
-| `src/main/java/com/starrocks/lineage/pipeline/` | Incremental `AuditLogSyncPipeline`: keyset audit reader, checkpoint / lease / batch intent, hourly and lineage pre-aggregation, user dictionary, Stream Load + guarded merge sink |
-| `sql/ddl/` | StarRocks 3.1 DDL of every target table |
+| `src/main/java/com/starrocks/lineage/pipeline/` | `AuditLogSyncPipeline`: time-slice batches with persisted step progress, fenced lease, batch membership, label-state guard, reconciliation of late records, dead letters, repair / rebuild; hourly and daily pre-aggregation; Stream Load sink with rejected-row isolation |
+| `sql/ddl/` | StarRocks 3.1 DDL of every target and bookkeeping table (expression partitioned) |
+| `scripts/smoke/` | Staging smoke-test scripts and the operator tool `smoke-ops.jsh` (status, redo, mark-done, skip, repair, rebuild) |
 | `sql/query/` | Standard business queries |
 | `docs/` | Stage design documents and architect review logs |
 
@@ -47,6 +52,7 @@ See [docs/container-verification.md](docs/container-verification.md) for what th
 | 2 | Symbol table and scope stack engine | ✅ [docs/stage2-scope-engine.md](docs/stage2-scope-engine.md) |
 | 3 | `StarRocksAuditAstVisitor` and `StarRocksSqlAnalyzer` | ✅ [docs/stage3-ast-visitor.md](docs/stage3-ast-visitor.md) |
 | 4 | Incremental pipeline, hourly pre-aggregation, acceptance tests | ✅ [docs/stage4-pipeline.md](docs/stage4-pipeline.md) |
+| 5 | Reliability: first run across days, poison batches, fencing, label retention, deterministic replay, late records, dead letters / repair / rebuild | ✅ [docs/stage5-reliability.md](docs/stage5-reliability.md) |
 
 ## Running the pipeline
 
@@ -56,11 +62,13 @@ MetadataProvider metadata = new JdbcStarRocksMetadataProvider(ds);
 StreamLoadClient streamLoad = new StreamLoadClient(URI.create("http://fe-host:8030"), "loader", "***",
         Duration.ofMinutes(5));
 AuditLogSyncPipeline pipeline = new AuditLogSyncPipeline(
-        PipelineConfig.builder("audit_lineage", hostAndPid).build(),
+        PipelineConfig.builder("audit_lineage", hostname).build(),   // a short, stable name; one owner per instance
         new JdbcAuditLogSource(ds), new JdbcCheckpointStore(ds),
-        new StarRocksSink(ds, streamLoad, "audit_lineage_db"),
+        new StarRocksSink(ds, streamLoad, "audit_lineage_db", "audit_lineage"),
         new StarRocksSqlAnalyzer(metadata), metadata, Clock.systemDefaultZone());
 pipeline.start(Duration.ofMinutes(1));
+// alert on pipeline.getMetrics().isBlocked() / getConsecutiveFailures(); operations:
+// pipeline.resolveBlockedStep(...), skipPendingBatch(reason), repairDeadLetters(from, to, limit), rebuild(fromDay, toDay)
 ```
 
-Create the tables first with `sql/ddl/00..05`.
+Create the tables first with `sql/ddl/00..09`.

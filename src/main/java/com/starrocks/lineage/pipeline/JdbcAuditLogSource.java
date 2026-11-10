@@ -14,53 +14,142 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Keyset-paginated reader of {@code starrocks_audit_db__.starrocks_audit_tbl__} (StarRocks 3.1 audit loader schema).
+ * {@link AuditLogSource} on {@code starrocks_audit_db__.starrocks_audit_tbl__} (StarRocks 3.1 audit loader schema) and
+ * {@code audit_lineage_batch_member}.
  *
  * <p>StarRocks 3.1 has no row-value comparison, so {@code (timestamp, queryId) > (t, q)} is written as
- * {@code timestamp > t OR (timestamp = t AND queryId > q)}; the leading {@code timestamp >= t} conjunct keeps
- * partition pruning on the (day partitioned) audit table.</p>
+ * {@code timestamp > t OR (timestamp = t AND queryId > q)}; the range predicate on {@code timestamp} keeps partition
+ * pruning on both day-partitioned tables.</p>
  */
 public final class JdbcAuditLogSource implements AuditLogSource {
 
     /** Default audit table of the StarRocks audit loader plugin. */
     public static final String DEFAULT_TABLE = "starrocks_audit_db__.starrocks_audit_tbl__";
+    /** Default membership table. */
+    public static final String DEFAULT_MEMBER_TABLE = "audit_lineage_db.audit_lineage_batch_member";
+
+    private static final String COLUMNS = "a.queryId, a.`timestamp`, a.queryType, a.clientIp, a.`user`, "
+            + "a.authorizedUser, a.`catalog`, a.db, a.state, a.errorCode, a.queryTime, a.scanBytes, a.scanRows, "
+            + "a.returnRows, a.cpuCostNs, a.memCostBytes, a.isQuery, a.stmt, a.digest";
+    private static final String KEYSET = " AND (a.`timestamp` > ? OR (a.`timestamp` = ? AND a.queryId > ?))";
+    private static final String ORDER = " ORDER BY a.`timestamp`, a.queryId LIMIT ?";
 
     private final DataSource dataSource;
-    private final String sql;
+    private final String table;
+    private final String memberTable;
     private final int queryTimeoutSeconds;
 
     public JdbcAuditLogSource(DataSource dataSource) {
-        this(dataSource, DEFAULT_TABLE, 60);
+        this(dataSource, DEFAULT_TABLE, DEFAULT_MEMBER_TABLE, 120);
     }
 
     /**
-     * @param table qualified audit table name (trusted configuration, not user input)
+     * @param table       qualified audit table name (trusted configuration)
+     * @param memberTable qualified membership table name (trusted configuration)
      */
-    public JdbcAuditLogSource(DataSource dataSource, String table, int queryTimeoutSeconds) {
+    public JdbcAuditLogSource(DataSource dataSource, String table, String memberTable, int queryTimeoutSeconds) {
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
-        if (!table.matches("[A-Za-z0-9_.`]+")) {
-            throw new IllegalArgumentException("invalid audit table name: " + table);
+        if (!table.matches("[A-Za-z0-9_.`]+") || !memberTable.matches("[A-Za-z0-9_.`]+")) {
+            throw new IllegalArgumentException("invalid table name: " + table + " / " + memberTable);
         }
+        this.table = table;
+        this.memberTable = memberTable;
         this.queryTimeoutSeconds = queryTimeoutSeconds;
-        this.sql = "SELECT queryId, `timestamp`, queryType, clientIp, `user`, authorizedUser, `catalog`, db, state, "
-                + "errorCode, queryTime, scanBytes, scanRows, returnRows, cpuCostNs, memCostBytes, isQuery, stmt, "
-                + "digest FROM " + table
-                + " WHERE `timestamp` >= ? AND (`timestamp` > ? OR (`timestamp` = ? AND queryId > ?))"
-                + " AND `timestamp` < ? ORDER BY `timestamp`, queryId LIMIT ?";
     }
 
     @Override
-    public List<AuditLogRecord> fetch(Watermark after, LocalDateTime upperBound, int limit) {
-        Timestamp from = Timestamp.valueOf(after.getTimestamp());
+    public List<AuditLogRecord> fetchRange(LocalDateTime from, LocalDateTime to, Watermark after, int limit) {
+        String sql = "SELECT " + COLUMNS + " FROM " + table + " a WHERE a.`timestamp` >= ? AND a.`timestamp` < ?"
+                + KEYSET + ORDER;
+        return query(sql, from, to, after, limit);
+    }
+
+    @Override
+    public List<AuditLogRecord> fetchMembers(String pipeline, String batchId, LocalDateTime from, LocalDateTime to,
+                                             Watermark after, int limit) {
+        String sql = "SELECT " + COLUMNS + " FROM " + table + " a JOIN " + memberTable + " m "
+                + "ON m.query_id = a.queryId AND m.audit_time = a.`timestamp` "
+                + "WHERE m.pipeline_name = ? AND m.batch_id = ? AND m.audit_time >= ? AND m.audit_time < ? "
+                + "AND a.`timestamp` >= ? AND a.`timestamp` < ?" + KEYSET + ORDER;
+        return query(sql, from, to, after, limit, pipeline, batchId);
+    }
+
+    @Override
+    public List<AuditLogRecord> fetchProcessed(String pipeline, LocalDateTime from, LocalDateTime to,
+                                               Watermark after, int limit) {
+        String sql = "SELECT " + COLUMNS + " FROM " + table + " a LEFT SEMI JOIN " + memberTable + " m "
+                + "ON m.query_id = a.queryId AND m.audit_time = a.`timestamp` AND m.pipeline_name = ? "
+                + "AND m.audit_time >= ? AND m.audit_time < ? "
+                + "WHERE a.`timestamp` >= ? AND a.`timestamp` < ?" + KEYSET + ORDER;
+        return query(sql, from, to, after, limit, pipeline, null);
+    }
+
+    @Override
+    public List<AuditLogRecord> fetchUnprocessed(String pipeline, LocalDateTime from, LocalDateTime to, int limit) {
+        String sql = "SELECT " + COLUMNS + " FROM " + table + " a LEFT ANTI JOIN " + memberTable + " m "
+                + "ON m.query_id = a.queryId AND m.audit_time = a.`timestamp` AND m.pipeline_name = ? "
+                + "AND m.audit_time >= ? AND m.audit_time < ? "
+                + "WHERE a.`timestamp` >= ? AND a.`timestamp` < ?" + KEYSET + ORDER;
+        return query(sql, from, to, Watermark.startingAt(from), limit, pipeline, null);
+    }
+
+    @Override
+    public long countMembers(String pipeline, LocalDateTime from, LocalDateTime to) {
+        return count("SELECT COUNT(*) FROM " + memberTable + " m WHERE m.pipeline_name = ? AND m.audit_time >= ? "
+                + "AND m.audit_time < ?", pipeline, from, to);
+    }
+
+    @Override
+    public long countProcessed(String pipeline, LocalDateTime from, LocalDateTime to) {
+        return count("SELECT COUNT(*) FROM " + memberTable + " m JOIN " + table + " a ON a.queryId = m.query_id "
+                + "AND a.`timestamp` = m.audit_time WHERE m.pipeline_name = ? AND m.audit_time >= ? "
+                + "AND m.audit_time < ? AND a.`timestamp` >= ? AND a.`timestamp` < ?", pipeline, from, to, from, to);
+    }
+
+    private long count(String sql, Object... params) {
         try (Connection c = dataSource.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setQueryTimeout(queryTimeoutSeconds);
-            ps.setTimestamp(1, from);
-            ps.setTimestamp(2, from);
-            ps.setTimestamp(3, from);
-            ps.setString(4, after.getQueryId());
-            ps.setTimestamp(5, Timestamp.valueOf(upperBound));
-            ps.setInt(6, limit);
-            List<AuditLogRecord> records = new ArrayList<>(limit);
+            for (int i = 0; i < params.length; i++) {
+                Object p = params[i];
+                if (p instanceof LocalDateTime) {
+                    ps.setTimestamp(i + 1, Timestamp.valueOf((LocalDateTime) p));
+                } else {
+                    ps.setString(i + 1, (String) p);
+                }
+            }
+            try (ResultSet rs = ps.executeQuery()) {
+                rs.next();
+                return rs.getLong(1);
+            }
+        } catch (SQLException e) {
+            throw new PipelineException("audit count failed: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Binds, in order: [pipeline, (batchId), from, to] for member queries, then from, to, keyset (3), limit.
+     */
+    private List<AuditLogRecord> query(String sql, LocalDateTime from, LocalDateTime to, Watermark after, int limit,
+                                       String pipeline, String batchId) {
+        try (Connection c = dataSource.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setQueryTimeout(queryTimeoutSeconds);
+            int i = 1;
+            if (pipeline != null) {
+                ps.setString(i++, pipeline);
+                if (batchId != null) {
+                    ps.setString(i++, batchId);
+                }
+                ps.setTimestamp(i++, Timestamp.valueOf(from));
+                ps.setTimestamp(i++, Timestamp.valueOf(to));
+            }
+            ps.setTimestamp(i++, Timestamp.valueOf(from));
+            ps.setTimestamp(i++, Timestamp.valueOf(to));
+            Timestamp cursor = Timestamp.valueOf(after.getTimestamp());
+            ps.setTimestamp(i++, cursor);
+            ps.setTimestamp(i++, cursor);
+            ps.setString(i++, after.getQueryId());
+            ps.setInt(i, limit);
+            List<AuditLogRecord> records = new ArrayList<>();
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     records.add(AuditLogRecord.builder()
@@ -88,7 +177,11 @@ public final class JdbcAuditLogSource implements AuditLogSource {
             }
             return records;
         } catch (SQLException e) {
-            throw new PipelineException("audit read after " + after + " failed: " + e.getMessage(), e);
+            throw new PipelineException("audit read failed: " + e.getMessage(), e);
         }
+    }
+
+    private List<AuditLogRecord> query(String sql, LocalDateTime from, LocalDateTime to, Watermark after, int limit) {
+        return query(sql, from, to, after, limit, null, null);
     }
 }

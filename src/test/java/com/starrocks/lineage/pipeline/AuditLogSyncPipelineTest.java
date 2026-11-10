@@ -1,74 +1,66 @@
 package com.starrocks.lineage.pipeline;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.starrocks.lineage.analyzer.StarRocksSqlAnalyzer;
 import com.starrocks.lineage.metadata.InMemoryMetadataProvider;
 import com.starrocks.lineage.metadata.MetadataAccessException;
 import com.starrocks.lineage.metadata.MetadataProvider;
 import com.starrocks.lineage.metadata.TableSchema;
-import com.starrocks.lineage.model.ColumnIdentifier;
-import com.starrocks.lineage.model.ColumnLineageEdge;
-import com.starrocks.lineage.model.LineageType;
+import com.starrocks.lineage.model.AuditLogRecord;
 import com.starrocks.lineage.model.ParseStatus;
 import com.starrocks.lineage.model.TableIdentifier;
-import com.starrocks.lineage.model.TransformType;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.Statement;
-import java.sql.Timestamp;
-import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * End-to-end: H2 audit table → {@link JdbcAuditLogSource} → analyzer threads → aggregators →
- * {@link StarRocksSink} (stream load to {@link FakeStarRocks}, merge on H2) → {@link JdbcCheckpointStore}.
+ * {@link AuditLogSyncPipeline} against {@link FakeWarehouse} (audit table + targets with StarRocks semantics and
+ * label de-duplication) and {@link JdbcCheckpointStore} on H2. One nested class per Stage 5 gap.
  */
 class AuditLogSyncPipelineTest {
 
-    private static final LocalDateTime NOW = LocalDateTime.of(2024, 6, 18, 12, 0);
-    private static final Clock CLOCK = Clock.fixed(NOW.toInstant(ZoneOffset.UTC), ZoneId.of("UTC"));
+    static final String PIPELINE = "audit_lineage";
+    static final LocalDateTime YESTERDAY = LocalDateTime.of(2024, 6, 17, 0, 0);
+    static final LocalDateTime TODAY = YESTERDAY.plusDays(1);
+    static final LocalDateTime NOW = TODAY.plusHours(12);
+    static final String QUERY = "SELECT amount FROM sales.orders WHERE user_id = 1";
+    static final String INSERT = "INSERT INTO dw.user_gmv SELECT user_id, SUM(amount) FROM sales.orders "
+            + "GROUP BY user_id";
 
-    private FakeStarRocks sr;
-    private StreamLoadClient client;
-    private InMemoryMetadataProvider metadata;
-    private final List<AuditLogSyncPipeline> pipelines = new ArrayList<>();
+    FakeWarehouse wh;
+    H2Checkpoints h2;
+    MutableClock clock;
+    JdbcCheckpointStore store;
+    FlakyMetadata metadata;
+    final List<AuditLogSyncPipeline> pipelines = new ArrayList<>();
+    int ids;
 
     @BeforeEach
     void setUp() throws Exception {
-        sr = new FakeStarRocks();
-        client = sr.client();
-        metadata = new InMemoryMetadataProvider()
+        wh = new FakeWarehouse(PIPELINE);
+        h2 = new H2Checkpoints();
+        clock = new MutableClock(NOW);
+        store = h2.store(clock);
+        metadata = new FlakyMetadata(new InMemoryMetadataProvider()
                 .register("default_catalog.sales.orders", "order_id", "user_id", "amount", "dt")
-                .register("default_catalog.sales.users", "user_id", "name", "city")
-                .register("default_catalog.dw.user_gmv", "user_id", "gmv");
-        try (Connection c = sr.dataSource.getConnection(); Statement st = c.createStatement()) {
-            st.execute("CREATE SCHEMA starrocks_audit_db__");
-            st.execute("CREATE TABLE starrocks_audit_db__.starrocks_audit_tbl__ (queryId VARCHAR(48), "
-                    + "`timestamp` DATETIME, queryType VARCHAR(12), clientIp VARCHAR(32), `user` VARCHAR(64), "
-                    + "authorizedUser VARCHAR(64), `catalog` VARCHAR(32), db VARCHAR(96), state VARCHAR(8), "
-                    + "errorCode VARCHAR(96), queryTime BIGINT, scanBytes BIGINT, scanRows BIGINT, "
-                    + "returnRows BIGINT, cpuCostNs BIGINT, memCostBytes BIGINT, isQuery TINYINT, "
-                    + "stmt VARCHAR(65533), digest VARCHAR(32))");
-        }
+                .register("default_catalog.sales.flaky", "f")
+                .register("default_catalog.dw.user_gmv", "user_id", "gmv"));
     }
 
     @AfterEach
@@ -76,317 +68,634 @@ class AuditLogSyncPipelineTest {
         for (AuditLogSyncPipeline p : pipelines) {
             p.close();
         }
-        client.close();
-        sr.close();
+        h2.close();
     }
 
-    private void audit(String queryId, LocalDateTime ts, String user, String state, String errorCode, String stmt)
-            throws Exception {
-        try (Connection c = sr.dataSource.getConnection(); PreparedStatement ps = c.prepareStatement(
-                "INSERT INTO starrocks_audit_db__.starrocks_audit_tbl__ VALUES "
-                        + "(?, ?, 'query', '10.0.0.1', ?, ?, 'default_catalog', 'sales', ?, ?, 120, 4096, 10, 1, "
-                        + "0, 0, 1, ?, ?)")) {
-            ps.setString(1, queryId);
-            ps.setTimestamp(2, Timestamp.valueOf(ts));
-            ps.setString(3, user);
-            ps.setString(4, "'" + user + "'@'%'");
-            ps.setString(5, state);
-            ps.setString(6, errorCode);
-            ps.setString(7, stmt);
-            ps.setString(8, "dg" + queryId);
-            ps.executeUpdate();
-        }
+    PipelineConfig.Builder config(String owner) {
+        return PipelineConfig.builder(PIPELINE, owner).initialStart(YESTERDAY).analyzerThreads(4).pageSize(2)
+                .maxRecordsPerBatch(1000).alertAfterAttempts(2);
     }
 
-    private AuditLogSyncPipeline pipeline(String owner, int pageSize, int maxRecords, AuditLineageSink sink,
-                                          MetadataProvider meta) {
-        PipelineConfig config = PipelineConfig.builder("audit_lineage", owner).pageSize(pageSize)
-                .maxRecordsPerCycle(maxRecords).lateArrival(Duration.ofMinutes(5)).analyzerThreads(4)
-                .leaseTtl(Duration.ofMinutes(10)).initialStart(NOW.minusDays(1)).build();
-        AuditLogSyncPipeline p = new AuditLogSyncPipeline(config, new JdbcAuditLogSource(sr.dataSource),
-                new JdbcCheckpointStore(sr.dataSource, "audit_lineage_db.audit_lineage_sync_checkpoint", CLOCK,
-                        "MERGE"),
-                sink, new StarRocksSqlAnalyzer(meta), meta, CLOCK);
+    AuditLogSyncPipeline pipeline(PipelineConfig cfg) {
+        AuditLogSyncPipeline p = new AuditLogSyncPipeline(cfg, wh, store, wh, new StarRocksSqlAnalyzer(metadata),
+                metadata, clock);
         pipelines.add(p);
         return p;
     }
 
-    private StarRocksSink sink() {
-        return new StarRocksSink(sr.dataSource, client, "audit_lineage_db", 1_000, "MERGE", CLOCK);
+    AuditLogSyncPipeline pipeline() {
+        return pipeline(config("node-a").build());
     }
 
-    private CheckpointStore.Checkpoint checkpoint() {
-        return new JdbcCheckpointStore(sr.dataSource, "audit_lineage_db.audit_lineage_sync_checkpoint", CLOCK,
-                        "MERGE")
-                .load("audit_lineage").get();
+    AuditLogRecord audit(LocalDateTime ts, String user, String sql) {
+        AuditLogRecord r = AuditLogRecord.builder().queryId(String.format("q%04d", ++ids)).timestamp(ts).user(user)
+                .state("EOF").errorCode("").catalog("default_catalog").db("sales").queryTime(10).scanBytes(100)
+                .digest("d").isQuery(sql.trim().toUpperCase().startsWith("SELECT")).stmt(sql).build();
+        wh.addAudit(r);
+        return r;
     }
 
-    private void seedFirstBatch() throws Exception {
-        LocalDateTime t = NOW.minusHours(2);
-        audit("q01", t, "alice", "EOF", "", "/* ApplicationName=DBeaver */ SELECT amount FROM orders WHERE amount > 1");
-        audit("q02", t, "bob", "EOF", "",
-                "SELECT o.amount, u.city FROM orders o JOIN users u ON o.user_id = u.user_id");
-        audit("q03", t.plusMinutes(1), "etl", "EOF", "",
-                "INSERT INTO dw.user_gmv SELECT user_id, SUM(amount) FROM orders GROUP BY user_id");
-        audit("q04", t.plusMinutes(2), "alice", "ERR", "1064", "SELECT broken FROM");
-        audit("q05", t.plusMinutes(3), "alice", "EOF", "", "SHOW TABLES");
-        audit("q06", t.plusMinutes(4), "carol", "EOF", "", "SELECT FROM WHERE");
-        audit("q07", t.plusMinutes(5), "alice", "EOF", "0", "SELECT amount FROM orders ORDER BY amount");
-        audit("q99", NOW.minusMinutes(2), "late", "EOF", "", "SELECT city FROM users");
-    }
-
-    @Test
-    void endToEndCycleWritesUsageLineageDictionaryAndCheckpoint() throws Exception {
-        seedFirstBatch();
-        AuditLogSyncPipeline p = pipeline("node-1", 3, 1_000, sink(), metadata);
-
-        CycleReport report = p.runOnce();
-        assertEquals(CycleReport.Outcome.COMMITTED, report.getOutcome());
-        assertEquals(7, report.getRecords(), "q99 is inside the 5 minute late-arrival window");
-        assertEquals(4, report.statusCount(ParseStatus.SUCCESS));
-        assertEquals(1, report.statusCount(ParseStatus.SKIPPED_FAILED_QUERY));
-        assertEquals(1, report.statusCount(ParseStatus.SKIPPED_MANAGEMENT));
-        assertEquals(1, report.statusCount(ParseStatus.PARSE_ERROR));
-        assertEquals(new Watermark(NOW.minusHours(2).plusMinutes(5), "q07"), report.getWatermark().get());
-
-        // usage: one row per (hour, column, user)
-        List<FakeStarRocks.Load> usage = sr.loadsInto("audit_column_hourly_usage");
-        assertEquals(1, usage.size());
-        assertEquals(report.getBatchId().get() + "_usage_0", usage.get(0).label);
-        JsonNode rows = usage.get(0).rows;
-        Map<String, Long> users = sink().loadUserDictionary();
-        assertEquals(2, users.size(), "alice and bob (etl wrote lineage only)");
-        long aliceAmountAccess = 0;
-        long aliceAmountWhere = 0;
-        long aliceAmountOrder = 0;
-        for (JsonNode r : rows) {
-            if (r.get("user_name").asText().equals("alice") && r.get("column_name").asText().equals("amount")) {
-                aliceAmountAccess += r.get("access_query_cnt").asLong();
-                aliceAmountWhere += r.get("where_clause_cnt").asLong();
-                aliceAmountOrder += r.get("order_by_cnt").asLong();
-                assertEquals(users.get("alice").longValue(), r.get("user_id").asLong());
-                assertEquals("2024-06-18 10:00:00", r.get("stat_hour").asText());
-                assertEquals(8192, r.get("total_scan_bytes").asLong());
+    /** Runs cycles until one does not commit; returns the committed reports. */
+    static List<CycleReport> drain(AuditLogSyncPipeline p) {
+        List<CycleReport> committed = new ArrayList<>();
+        for (int i = 0; i < 10_000; i++) {
+            CycleReport r = p.runOnce();
+            if (r.getOutcome() != CycleReport.Outcome.COMMITTED) {
+                return committed;
             }
+            committed.add(r);
         }
-        assertEquals(2, aliceAmountAccess, "q01 + q07");
-        assertEquals(1, aliceAmountWhere);
-        assertEquals(1, aliceAmountOrder);
-        assertEquals(5, rows.size(), "alice.amount, bob.amount, bob.user_id x2 (orders/users), bob.city");
-
-        // lineage merged
-        ColumnLineageEdge gmv = ColumnLineageEdge.of(ColumnIdentifier.parse("default_catalog.dw.user_gmv.gmv"),
-                ColumnIdentifier.parse("default_catalog.sales.orders.amount"), LineageType.DIRECT,
-                TransformType.AGGREGATION, null);
-        Map<String, Object> row = sr.lineageRow(gmv.edgeId());
-        assertEquals("AGGREGATION", row.get("transform_type"));
-        assertEquals(1L, row.get("exec_count"));
-        assertEquals("q03", row.get("last_query_id"));
-        assertEquals("etl", row.get("last_exec_user"));
-        assertEquals("INSERT_INTO", row.get("stmt_type"));
-        assertEquals("dgq03", row.get("sql_digest"));
-        assertEquals(4, sr.count("audit_column_lineage"), "uid/gmv direct + group-by indirect on both");
-
-        CheckpointStore.Checkpoint cp = checkpoint();
-        assertEquals(report.getWatermark().get(), cp.getWatermark());
-        assertFalse(cp.getPending().isPresent());
-        assertEquals(7, cp.getProcessedRows());
-
-        assertEquals(CycleReport.Outcome.IDLE, p.runOnce().getOutcome());
-        assertEquals(1, p.getMetrics().getCommittedCycles());
-        assertEquals(4, p.getMetrics().statusCount(ParseStatus.SUCCESS));
+        throw new AssertionError("pipeline does not settle");
     }
 
-    /** Review R4-02: crash after the lineage merge, before the commit → exact replay, nothing counted twice. */
-    @Test
-    void failedCycleIsReplayedExactlyOnce() throws Exception {
-        seedFirstBatch();
-        AtomicBoolean crash = new AtomicBoolean(true);
-        StarRocksSink real = sink();
-        AuditLineageSink crashing = new AuditLineageSink() {
-            @Override
-            public Map<String, Long> loadUserDictionary() {
-                return real.loadUserDictionary();
-            }
-
-            @Override
-            public void writeUserDictionary(String b, List<UserDictionary.Entry> e, LocalDateTime t) {
-                real.writeUserDictionary(b, e, t);
-            }
-
-            @Override
-            public void writeUsage(String b, List<HourlyUsageRow> rows, UserDictionary d) {
-                real.writeUsage(b, rows, d);
-            }
-
-            @Override
-            public void writeLineage(String b, List<LineageRow> rows) {
-                real.writeLineage(b, rows);
-                if (crash.getAndSet(false)) {
-                    throw new IllegalStateException("process killed after merge");
-                }
-            }
-        };
-        AuditLogSyncPipeline p = pipeline("node-1", 100, 1_000, crashing, metadata);
-        assertThrows(PipelineException.class, p::runOnce);
-        CheckpointStore.Checkpoint afterCrash = checkpoint();
-        assertTrue(afterCrash.getPending().isPresent(), "intent survives the crash");
-        assertEquals(Watermark.startingAt(NOW.minusDays(1)), afterCrash.getWatermark());
-        String batchId = afterCrash.getPending().get().getBatchId();
-
-        // a new record arrives meanwhile: it must NOT join the replayed batch
-        audit("q08", NOW.minusHours(1), "dave", "EOF", "", "SELECT name FROM users");
-
-        CycleReport replay = p.runOnce();
-        assertTrue(replay.isReplay());
-        assertEquals(batchId, replay.getBatchId().get());
-        assertEquals(7, replay.getRecords());
-        assertEquals(1, sr.loadsInto("audit_column_hourly_usage").size(), "usage label de-duplicated the replay");
-        assertEquals(1, sr.loadsInto("audit_column_lineage_stage").size());
-        ColumnLineageEdge gmv = ColumnLineageEdge.of(ColumnIdentifier.parse("default_catalog.dw.user_gmv.gmv"),
-                ColumnIdentifier.parse("default_catalog.sales.orders.amount"), LineageType.DIRECT,
-                TransformType.AGGREGATION, null);
-        assertEquals(1L, sr.lineageRow(gmv.edgeId()).get("exec_count"), "merge guard: not doubled");
-        assertFalse(checkpoint().getPending().isPresent());
-
-        CycleReport next = p.runOnce();
-        assertFalse(next.isReplay());
-        assertEquals(1, next.getRecords(), "q08 in its own batch");
-        assertEquals(1, p.getMetrics().getFailedCycles());
-        assertEquals(1, p.getMetrics().getReplayedCycles());
-        assertEquals(3, sink().loadUserDictionary().size(), "dave got the next id");
+    CheckpointStore.Checkpoint checkpoint() {
+        return store.load(PIPELINE).get();
     }
 
-    @Test
-    void metadataOutageAbortsWithoutCommittingAndRecovers() throws Exception {
-        seedFirstBatch();
-        AtomicBoolean down = new AtomicBoolean(true);
-        MetadataProvider flaky = new MetadataProvider() {
-            @Override
-            public Optional<TableSchema> getTableSchema(TableIdentifier table) {
-                if (down.get()) {
-                    throw new MetadataAccessException("FE unreachable", null);
-                }
-                return metadata.getTableSchema(table);
-            }
-        };
-        AuditLogSyncPipeline p = pipeline("node-1", 100, 1_000, sink(), flaky);
-        PipelineException e = assertThrows(PipelineException.class, p::runOnce);
-        assertTrue(e.getMessage().contains("metadata unavailable"));
-        assertTrue(sr.loadsInto("audit_column_hourly_usage").isEmpty(), "nothing written");
-        assertTrue(checkpoint().getPending().isPresent());
-        down.set(false);
-        CycleReport ok = p.runOnce();
-        assertTrue(ok.isReplay());
-        assertEquals(4, ok.statusCount(ParseStatus.SUCCESS));
+    static LocalDateTime hour(LocalDateTime t) {
+        return t.withMinute(0).withSecond(0).withNano(0);
     }
 
-    @Test
-    void keysetPaginationAcrossEqualTimestampsAndCycleLimit() throws Exception {
-        LocalDateTime t = NOW.minusHours(3);
-        for (int i = 0; i < 10; i++) {
-            audit(String.format("k%02d", i), i < 6 ? t : t.plusSeconds(1), "u" + i, "EOF", "",
-                    "SELECT city FROM users");
+    // ================================================================================================ gap 1
+
+    @Nested
+    class Gap1FirstRunAcrossDays {
+
+        @Test
+        void firstRunStartingYesterdayProcessesEveryDayInClosedSlices() {
+            AuditLogRecord y1 = audit(YESTERDAY.plusHours(10).plusSeconds(5), "alice", QUERY);
+            audit(TODAY.minusSeconds(1), "bob", QUERY);
+            audit(TODAY, "carol", QUERY);
+            audit(NOW.minusMinutes(6), "dave", QUERY);
+            AuditLogRecord open = audit(NOW.minusMinutes(4), "erin", QUERY);
+
+            List<CycleReport> batches = drain(pipeline());
+
+            assertEquals(4, batches.size(), "runs of empty slices end at the first slice with records");
+            assertTrue(batches.stream().allMatch(b -> b.getKind().get() == BatchKind.SLICE));
+            assertEquals(YESTERDAY, batches.get(0).getRangeStart().get());
+            assertEquals(YESTERDAY.plusHours(10).plusMinutes(5), batches.get(0).getRangeEnd().get());
+            assertEquals(1, wh.accessCount(hour(y1.getTimestamp()), "amount"), "yesterday is counted");
+            assertEquals(1, wh.accessCount(hour(TODAY.minusSeconds(1)), "amount"));
+            assertEquals(1, wh.accessCount(TODAY, "amount"));
+            assertEquals(NOW.minusMinutes(5), checkpoint().getCommittedUntil(),
+                    "watermark = last closed slice boundary (now - lateArrival)");
+            assertEquals(1, wh.accessCount(hour(open.getTimestamp()), "amount"),
+                    "the open slice is not processed yet: only dave's query counts in that hour");
+            assertEquals(4, checkpoint().getProcessedRows());
+            assertEquals(4, wh.members.size());
         }
-        AuditLogSyncPipeline p = pipeline("node-1", 2, 4, sink(), metadata);
-        List<String> batches = new ArrayList<>();
-        int total = 0;
-        CycleReport r;
-        while ((r = p.runOnce()).getOutcome() == CycleReport.Outcome.COMMITTED) {
-            total += r.getRecords();
-            batches.add(r.getBatchId().get());
-            assertTrue(r.getRecords() <= 4);
+
+        @Test
+        void quietPeriodsAreCommittedTogetherAndSlicesAreHourAligned() {
+            PipelineConfig cfg = config("node-a").initialStart(YESTERDAY.plusMinutes(7)).maxEmptySlicesPerBatch(12)
+                    .build();
+            assertEquals(YESTERDAY.plusMinutes(5), cfg.getInitialStart(), "aligned down to a slice boundary");
+            List<CycleReport> batches = drain(pipeline(cfg));
+            assertTrue(batches.stream().allMatch(b -> b.getRecords() == 0));
+            assertEquals(Duration.ofHours(1), Duration.between(batches.get(0).getRangeStart().get(),
+                    batches.get(0).getRangeEnd().get()), "12 empty slices per checkpoint write");
+            assertEquals(NOW.minusMinutes(5), checkpoint().getCommittedUntil());
+            assertThrows(IllegalArgumentException.class,
+                    () -> config("x").sliceSize(Duration.ofMinutes(7)).build(), "must divide the hour");
         }
-        assertEquals(10, total, "no record skipped or repeated across pages sharing a timestamp");
-        assertEquals(3, batches.size());
-        assertEquals(3, batches.stream().distinct().count());
-        long access = 0;
-        for (FakeStarRocks.Load l : sr.loadsInto("audit_column_hourly_usage")) {
-            for (JsonNode row : l.rows) {
-                access += row.get("access_query_cnt").asLong();
-            }
+    }
+
+    // ================================================================================================ gap 2
+
+    @Nested
+    class Gap2PoisonRecordsAndBatches {
+
+        @Test
+        void badRecordsBecomeDeadLettersAndTheBatchCommits() {
+            AuditLogRecord good = audit(YESTERDAY.plusMinutes(1), "alice", QUERY);
+            AuditLogRecord unparsable = audit(YESTERDAY.plusMinutes(2), "bob", "SELEC amount FROM");
+            AuditLogRecord crashing = audit(YESTERDAY.plusMinutes(3), "carol", "SELECT f FROM sales.flaky");
+            audit(YESTERDAY.plusMinutes(4), "dave", "SELECT dt FROM sales.orders");
+            metadata.fail("flaky", new IllegalStateException("analyzer bug"));
+            wh.rejectUsage = r -> r.getColumn().getColumn().equals("dt");
+
+            CycleReport r = pipeline().runOnce();
+
+            assertEquals(CycleReport.Outcome.COMMITTED, r.getOutcome());
+            assertEquals(2, r.getDeadLetters());
+            assertEquals(1, r.getFilteredRows());
+            assertEquals(1, r.statusCount(ParseStatus.PARSE_ERROR));
+            assertEquals(1, r.statusCount(ParseStatus.ANALYSIS_ERROR));
+            DeadLetter parse = wh.letter(unparsable.getQueryId(), DeadLetter.Kind.PARSE_ERROR);
+            assertEquals(DeadLetter.Status.OPEN, parse.getStatus());
+            assertEquals("SELEC amount FROM", parse.getRecord().getStmt(), "the full record is kept for repair");
+            assertEquals("bob", parse.getRecord().getUser());
+            assertTrue(wh.letter(crashing.getQueryId(), DeadLetter.Kind.ANALYSIS_ERROR).getErrorMessage()
+                    .contains("internal analyzer error"));
+            assertEquals(1, wh.letters(DeadLetter.Kind.LOAD_FILTERED).size(), "rejected rows are recorded");
+            assertEquals(1, wh.accessCount(hour(good.getTimestamp()), "amount"), "good rows are kept");
+            assertEquals(0, wh.accessCount(hour(good.getTimestamp()), "dt"));
+            BatchLogEntry log = wh.batchLog.get(r.getBatchId().get());
+            assertEquals(4, log.getRecords());
+            assertEquals(2, log.getFailed());
+            assertEquals(1, log.getFilteredRows());
         }
-        assertEquals(10, access);
-        assertEquals(10, sink().loadUserDictionary().size());
+
+        @Test
+        void nonRetryableFailureBlocksAndIsCountedThenRecovers() {
+            audit(YESTERDAY.plusMinutes(1), "alice", INSERT);
+            wh.failBefore.put("lineage", 1);
+            wh.failNonRetryable.put("lineage", true);
+            AuditLogSyncPipeline p = pipeline();
+
+            CycleReport blocked = p.runOnce();
+            assertEquals(CycleReport.Outcome.BLOCKED, blocked.getOutcome());
+            assertTrue(blocked.getMessage().get().contains("injected failure before lineage"));
+            assertTrue(p.getMetrics().isBlocked());
+            CheckpointStore.PendingBatch pending = checkpoint().getPending().get();
+            assertEquals(1, pending.getAttempts());
+            assertEquals(BatchStep.USAGE, pending.getStep());
+            assertTrue(pending.getLastError().get().startsWith("[non-retryable]"));
+
+            CycleReport ok = p.runOnce();
+            assertEquals(CycleReport.Outcome.COMMITTED, ok.getOutcome());
+            assertTrue(ok.isReplay());
+            assertFalse(p.getMetrics().isBlocked());
+            assertEquals(0, p.getMetrics().getConsecutiveFailures());
+            assertEquals(1, wh.lineage.values().stream().filter(l -> l.target.getColumn().equals("gmv"))
+                    .findFirst().get().execCount);
+        }
+
+        @Test
+        void permanentlyBlockedBatchIsSkippedByTheOperatorAndNotReprocessed() {
+            AuditLogRecord write = audit(YESTERDAY.plusMinutes(1), "alice", INSERT);
+            audit(YESTERDAY.plusMinutes(2), "bob", QUERY);
+            wh.failBefore.put("lineage", 100);
+            wh.failNonRetryable.put("lineage", true);
+            AuditLogSyncPipeline p = pipeline();
+            assertEquals(CycleReport.Outcome.BLOCKED, p.runOnce().getOutcome());
+            assertEquals(CycleReport.Outcome.BLOCKED, p.runOnce().getOutcome());
+            assertEquals(2, checkpoint().getPending().get().getAttempts(), "alert threshold reached");
+            String batchId = checkpoint().getPending().get().getBatchId();
+
+            CycleReport skipped = p.skipPendingBatch("lineage stage rejects batch, ticket OPS-1");
+            assertEquals(CycleReport.Outcome.COMMITTED, skipped.getOutcome());
+            assertFalse(checkpoint().getPending().isPresent());
+            assertEquals(YESTERDAY.plusMinutes(5), checkpoint().getCommittedUntil());
+            DeadLetter letter = wh.letter(batchId, DeadLetter.Kind.BATCH_SKIPPED);
+            assertTrue(letter.getErrorMessage().contains("OPS-1"));
+            assertTrue(letter.getDetail().contains("step=USAGE"));
+            assertEquals(1, p.getMetrics().getSkippedBatches());
+
+            wh.failBefore.clear();
+            clock.advance(Duration.ofMinutes(20));
+            drain(p);
+            assertEquals(batchId, wh.members.get(write.getQueryId() + "@" + write.getTimestamp()));
+            assertEquals(1, wh.accessCount(hour(YESTERDAY), "amount"), "usage of the skipped batch kept once");
+            assertTrue(wh.batchLog.values().stream().noneMatch(b -> b.getKind() == BatchKind.LATE),
+                    "reconciliation does not pick the skipped records up again");
+            assertThrows(IllegalStateException.class, () -> p.skipPendingBatch("nothing pending"));
+        }
+
+        @Test
+        void metadataOutageAbortsTheBatchAndIsRetried() {
+            audit(YESTERDAY.plusMinutes(1), "alice", QUERY);
+            metadata.fail("orders", new MetadataAccessException("FE down", null));
+            AuditLogSyncPipeline p = pipeline();
+            PipelineException e = assertThrows(PipelineException.class, p::runOnce);
+            assertTrue(e.isRetryable());
+            assertEquals(0, wh.ops("usage"));
+            assertEquals(1, p.getMetrics().getConsecutiveFailures());
+            metadata.heal();
+            assertEquals(CycleReport.Outcome.COMMITTED, p.runOnce().getOutcome());
+            assertEquals(1, wh.accessCount(hour(YESTERDAY), "amount"));
+        }
     }
 
-    @Test
-    void secondInstanceCannotTakeALiveLease() throws Exception {
-        seedFirstBatch();
-        AuditLogSyncPipeline first = pipeline("node-1", 100, 1_000, sink(), metadata);
-        AuditLogSyncPipeline second = pipeline("node-2", 100, 1_000, sink(), metadata);
-        assertEquals(CycleReport.Outcome.COMMITTED, first.runOnce().getOutcome());
-        assertEquals(CycleReport.Outcome.LEASE_NOT_ACQUIRED, second.runOnce().getOutcome());
-        assertEquals(CycleReport.Outcome.IDLE, first.runOnce().getOutcome());
+    // ================================================================================================ gap 3
+
+    @Nested
+    class Gap3Fencing {
+
+        @Test
+        void pausedInstanceIsFencedAndTheTakeOverWritesExactlyOnce() {
+            audit(YESTERDAY.plusMinutes(1), "alice", INSERT);
+            audit(YESTERDAY.plusMinutes(2), "bob", QUERY);
+            AuditLogSyncPipeline a = pipeline(config("node-a").build());
+            AuditLogSyncPipeline b = pipeline(config("node-b").build());
+            AtomicReference<CycleReport> byB = new AtomicReference<>();
+            // node-a pauses (GC, network partition) right before its lineage load; its lease expires and node-b
+            // takes the batch over and finishes it
+            wh.beforeOp.put("lineage", () -> {
+                clock.advance(Duration.ofMinutes(11));
+                byB.set(b.runOnce());
+            });
+
+            LeaseLostException fenced = assertThrows(LeaseLostException.class, a::runOnce);
+            assertTrue(fenced.getMessage().contains("node-b"));
+            assertEquals(CycleReport.Outcome.COMMITTED, byB.get().getOutcome());
+            assertTrue(byB.get().isReplay(), "node-b resumed node-a's declared batch");
+            assertEquals("node-b", checkpoint().getOwner());
+            assertEquals(1, wh.accessCount(hour(YESTERDAY), "amount"));
+            assertEquals(1, wh.lineage.values().stream().filter(l -> l.target.getColumn().equals("gmv"))
+                    .findFirst().get().execCount, "node-a's late write reused the label and was dropped");
+            assertEquals(CycleReport.Outcome.LEASE_NOT_ACQUIRED, a.runOnce().getOutcome());
+        }
+
+        @Test
+        void closeReleasesTheLeaseForAStandby() {
+            AuditLogSyncPipeline a = pipeline(config("node-a").build());
+            AuditLogSyncPipeline b = pipeline(config("node-b").build());
+            a.runOnce();
+            assertEquals(CycleReport.Outcome.LEASE_NOT_ACQUIRED, b.runOnce().getOutcome());
+            a.close();
+            assertNotEquals(CycleReport.Outcome.LEASE_NOT_ACQUIRED, b.runOnce().getOutcome());
+        }
     }
 
-    @Test
-    void createdObjectsAreInvalidatedInTheMetadataCache() throws Exception {
-        audit("c1", NOW.minusHours(1), "etl", "EOF", "", "CREATE TABLE dw.t_new AS SELECT city FROM users");
-        AtomicInteger invalidations = new AtomicInteger();
-        MetadataProvider tracking = new MetadataProvider() {
-            @Override
-            public Optional<TableSchema> getTableSchema(TableIdentifier table) {
-                return metadata.getTableSchema(table);
+    // ================================================================================================ gap 4
+
+    @Nested
+    class Gap4LabelRetention {
+
+        @Test
+        void crashAfterUsageInsideRetentionIsSkippedByLabelState() {
+            audit(YESTERDAY.plusMinutes(1), "alice", QUERY);
+            wh.crashAfter.put("usage", 1);
+            AuditLogSyncPipeline p = pipeline();
+            assertThrows(PipelineException.class, p::runOnce);
+            assertEquals(BatchStep.DICTIONARY, checkpoint().getPending().get().getStep());
+            assertEquals(CycleReport.Outcome.COMMITTED, p.runOnce().getOutcome());
+            assertEquals(1, wh.ops("usage"), "label COMMITTED: the load is not repeated");
+            assertEquals(1, wh.accessCount(hour(YESTERDAY), "amount"));
+        }
+
+        @Test
+        void crashAfterUsageBeyondRetentionBlocksInsteadOfDoubleCounting() {
+            audit(YESTERDAY.plusMinutes(1), "alice", QUERY);
+            wh.crashAfter.put("usage", 1);
+            AuditLogSyncPipeline p = pipeline();
+            assertThrows(PipelineException.class, p::runOnce);
+            wh.expireLabels();
+            clock.advance(Duration.ofDays(3));
+
+            CycleReport blocked = p.runOnce();
+            assertEquals(CycleReport.Outcome.BLOCKED, blocked.getOutcome());
+            assertTrue(blocked.getMessage().get().contains("label retention"));
+            assertEquals(1, wh.accessCount(hour(YESTERDAY), "amount"), "nothing added while blocked");
+
+            p.resolveBlockedStep(AuditLogSyncPipeline.StepResolution.MARK_DONE);
+            assertEquals(CycleReport.Outcome.COMMITTED, p.runOnce().getOutcome());
+            assertEquals(1, wh.accessCount(hour(YESTERDAY), "amount"));
+        }
+
+        @Test
+        void failureBeforeUsageBeyondRetentionIsRedoneByTheOperator() {
+            audit(YESTERDAY.plusMinutes(1), "alice", QUERY);
+            wh.failBefore.put("usage", 1);
+            AuditLogSyncPipeline p = pipeline();
+            assertThrows(PipelineException.class, p::runOnce);
+            wh.expireLabels();
+            clock.advance(Duration.ofDays(3));
+            assertEquals(CycleReport.Outcome.BLOCKED, p.runOnce().getOutcome());
+            assertThrows(IllegalArgumentException.class, () -> AuditLogSyncPipeline.StepResolution.valueOf("x"));
+            p.resolveBlockedStep(AuditLogSyncPipeline.StepResolution.REDO);
+            assertEquals(CycleReport.Outcome.COMMITTED, p.runOnce().getOutcome());
+            assertEquals(1, wh.accessCount(hour(YESTERDAY), "amount"));
+        }
+
+        @Test
+        void loadStillInFlightIsRetriedLaterAndLaterStepsAreNotGuarded() {
+            audit(YESTERDAY.plusMinutes(1), "alice", INSERT);
+            wh.crashAfter.put("lineage", 1);
+            AuditLogSyncPipeline p = pipeline();
+            assertThrows(PipelineException.class, p::runOnce);
+            String batch = checkpoint().getPending().get().getBatchId();
+            wh.labelStates.put(batch + "_lineage", StreamLoadClient.LoadState.IN_PROGRESS);
+            PipelineException inFlight = assertThrows(PipelineException.class, p::runOnce);
+            assertTrue(inFlight.isRetryable());
+            assertTrue(inFlight.getMessage().contains("in flight"));
+            wh.labelStates.clear();
+            assertEquals(CycleReport.Outcome.COMMITTED, p.runOnce().getOutcome());
+            assertEquals(1, wh.ops("lineage"));
+            assertEquals(1, wh.ops("daily"));
+        }
+
+        @Test
+        void resolveRefusesWhenNotBlockedOnALoad() {
+            AuditLogSyncPipeline p = pipeline();
+            assertThrows(IllegalStateException.class,
+                    () -> p.resolveBlockedStep(AuditLogSyncPipeline.StepResolution.REDO));
+            audit(YESTERDAY.plusMinutes(1), "alice", QUERY);
+            wh.failBefore.put("members", 1);
+            assertThrows(PipelineException.class, p::runOnce);
+            assertThrows(IllegalStateException.class,
+                    () -> p.resolveBlockedStep(AuditLogSyncPipeline.StepResolution.MARK_DONE));
+        }
+    }
+
+    // ================================================================================================ gap 5
+
+    @Nested
+    class Gap5DeterministicReplay {
+
+        @Test
+        void aResumedBatchProcessesExactlyItsMembers() {
+            audit(YESTERDAY.plusMinutes(1), "alice", QUERY);
+            wh.crashAfter.put("members", 1);
+            AuditLogSyncPipeline p = pipeline();
+            assertThrows(PipelineException.class, p::runOnce);
+            AuditLogRecord late = audit(YESTERDAY.plusMinutes(2), "bob", QUERY);
+
+            CycleReport resumed = p.runOnce();
+            assertEquals(1, resumed.getRecords(), "the record that arrived after PREPARE is not in the batch");
+            assertEquals(1, wh.accessCount(hour(YESTERDAY), "amount"));
+            assertFalse(wh.members.containsKey(late.getQueryId() + "@" + late.getTimestamp()));
+        }
+
+        /** Found on the real engine: a reset pipeline must not reproduce labels StarRocks still remembers. */
+        @Test
+        void aPipelineResetUnderTheSameNameGetsNewBatchIdsAndLabels() throws Exception {
+            audit(YESTERDAY.plusMinutes(1), "alice", QUERY);
+            AuditLogSyncPipeline first = pipeline();
+            String firstId = first.runOnce().getBatchId().get();
+            String epoch = checkpoint().getEpoch();
+            first.close();
+            // operator reset: checkpoint deleted, tables emptied; the FE still knows the labels (3 days)
+            try (java.sql.Connection c = h2.dataSource.getConnection(); java.sql.Statement st = c.createStatement()) {
+                st.execute("DELETE FROM " + H2Checkpoints.TABLE);
             }
+            wh.usage.clear();
+            wh.members.clear();
 
-            @Override
-            public void invalidate(TableIdentifier table) {
-                assertEquals(TableIdentifier.parse("default_catalog.dw.t_new"), table);
-                invalidations.incrementAndGet();
-            }
-        };
-        pipeline("node-1", 100, 1_000, sink(), tracking).runOnce();
-        assertEquals(2, invalidations.get(), "analyzer refreshes the target before reading its columns, the "
-                + "pipeline refreshes it again after the batch");
+            CycleReport again = pipeline().runOnce();
+            assertNotEquals(epoch, checkpoint().getEpoch());
+            assertNotEquals(firstId, again.getBatchId().get(), "same pipeline, same slice, new generation");
+            assertEquals(1, wh.accessCount(hour(YESTERDAY), "amount"), "the loads were not dropped as duplicates");
+            assertEquals(1, wh.members.size());
+        }
+
+        @Test
+        void recordsDeadLetteredByAnEarlierAttemptAreNotAnalysedAgain() {
+            AuditLogRecord flaky = audit(YESTERDAY.plusMinutes(1), "alice", "SELECT f FROM sales.flaky");
+            audit(YESTERDAY.plusMinutes(2), "bob", QUERY);
+            metadata.fail("flaky", new IllegalStateException("transient analyzer state"));
+            wh.crashAfter.put("dict", 1);
+            AuditLogSyncPipeline p = pipeline();
+            assertThrows(PipelineException.class, p::runOnce);
+            metadata.heal();
+
+            CycleReport resumed = p.runOnce();
+            assertEquals(CycleReport.Outcome.COMMITTED, resumed.getOutcome());
+            assertEquals(0, wh.accessCount(hour(YESTERDAY), "f"),
+                    "attempt 2 would succeed, but the record is already a dead letter: no double contribution");
+            assertEquals(DeadLetter.Status.OPEN,
+                    wh.letter(flaky.getQueryId(), DeadLetter.Kind.ANALYSIS_ERROR).getStatus());
+            assertEquals(1, wh.accessCount(hour(YESTERDAY), "amount"));
+        }
+
+        @Test
+        void aQueryFailingOnlyOnReplayAfterUsageIsNotDeadLettered() {
+            AuditLogRecord q = audit(YESTERDAY.plusMinutes(1), "alice", "SELECT f FROM sales.flaky");
+            wh.crashAfter.put("usage", 1);
+            AuditLogSyncPipeline p = pipeline();
+            assertThrows(PipelineException.class, p::runOnce);
+            metadata.fail("flaky", new IllegalStateException("regression"));
+            assertEquals(CycleReport.Outcome.COMMITTED, p.runOnce().getOutcome());
+            assertNull(wh.letter(q.getQueryId(), DeadLetter.Kind.ANALYSIS_ERROR),
+                    "its usage is already loaded: a dead letter would be repaired into a double count");
+            assertEquals(1, wh.accessCount(hour(YESTERDAY), "f"));
+        }
+    }
+
+    // ================================================================================================ gap 6
+
+    @Nested
+    class Gap6LateArrivals {
+
+        @Test
+        void reconciliationProcessesRecordsThatArrivedAfterTheirSliceWasCommitted() {
+            audit(TODAY.plusHours(1), "alice", QUERY);
+            AuditLogSyncPipeline p = pipeline();
+            drain(p);
+            LocalDateTime committed = checkpoint().getCommittedUntil();
+            AuditLogRecord late = audit(TODAY.plusHours(1).plusMinutes(1), "bob", QUERY);
+            audit(committed.minusHours(25), "zed", QUERY);
+
+            clock.advance(Duration.ofMinutes(16));
+            List<CycleReport> batches = drain(p);
+            CycleReport lateBatch = batches.stream().filter(b -> b.getKind().get() == BatchKind.LATE).findFirst()
+                    .orElseThrow(AssertionError::new);
+            assertEquals(1, lateBatch.getRecords(), "the record older than the reconcile window is not taken");
+            assertEquals(2, wh.accessCount(hour(late.getTimestamp()), "amount"));
+            assertEquals(2, wh.users(hour(late.getTimestamp()), "amount").size());
+            assertEquals(lateBatch.getBatchId().get(), wh.members.get(late.getQueryId() + "@" + late.getTimestamp()));
+            assertEquals(1, p.getMetrics().getLateRecords());
+            assertTrue(checkpoint().getLastReconcile().isPresent(), "the following reconciliation found nothing");
+
+            clock.advance(Duration.ofMinutes(16));
+            drain(p);
+            assertEquals(1, wh.batchLog.values().stream().filter(b -> b.getKind() == BatchKind.LATE).count(),
+                    "no new LATE batch");
+            assertEquals(2, wh.accessCount(hour(late.getTimestamp()), "amount"));
+        }
+    }
+
+    // ================================================================================================ gap 7
+
+    @Nested
+    class Gap7RepairAndRebuild {
+
+        @Test
+        void deadLettersAreRepairedAfterTheFix() {
+            AuditLogRecord a = audit(YESTERDAY.plusMinutes(1), "alice", "SELECT f FROM sales.flaky");
+            AuditLogRecord b = audit(YESTERDAY.plusMinutes(2), "bob", "SELEC broken");
+            metadata.fail("flaky", new IllegalStateException("analyzer bug"));
+            AuditLogSyncPipeline p = pipeline();
+            drain(p);
+            assertEquals(2, wh.deadLetters.size());
+            metadata.heal();
+
+            CycleReport repair = p.repairDeadLetters(YESTERDAY, TODAY, 100);
+            assertTrue(metadata.invalidated.contains("*"), "a repair never uses cached schemas");
+            assertEquals(BatchKind.REPAIR, repair.getKind().get());
+            assertEquals(2, repair.getRecords());
+            assertEquals(1, wh.accessCount(hour(YESTERDAY), "f"));
+            assertEquals(DeadLetter.Status.RESOLVED,
+                    wh.letter(a.getQueryId(), DeadLetter.Kind.ANALYSIS_ERROR).getStatus());
+            DeadLetter stillBroken = wh.letter(b.getQueryId(), DeadLetter.Kind.PARSE_ERROR);
+            assertEquals(DeadLetter.Status.OPEN, stillBroken.getStatus(), "fails again: back to OPEN");
+            assertNull(stillBroken.getRepairBatchId());
+
+            assertEquals(CycleReport.Outcome.IDLE, p.repairDeadLetters(TODAY, NOW, 100).getOutcome());
+            CycleReport again = p.repairDeadLetters(YESTERDAY, TODAY, 100);
+            assertEquals(1, again.getRecords());
+            assertEquals(1, wh.accessCount(hour(YESTERDAY), "f"), "a resolved record is never repaired twice");
+        }
+
+        @Test
+        void repairInterruptedAfterReservationResumes() {
+            AuditLogRecord a = audit(YESTERDAY.plusMinutes(1), "alice", "SELECT f FROM sales.flaky");
+            metadata.fail("flaky", new IllegalStateException("analyzer bug"));
+            AuditLogSyncPipeline p = pipeline();
+            drain(p);
+            metadata.heal();
+            wh.crashAfter.put("usage", 1);
+            assertThrows(PipelineException.class, () -> p.repairDeadLetters(YESTERDAY, TODAY, 100));
+            assertEquals(DeadLetter.Status.REPAIRING,
+                    wh.letter(a.getQueryId(), DeadLetter.Kind.ANALYSIS_ERROR).getStatus());
+            assertThrows(IllegalStateException.class, () -> p.repairDeadLetters(YESTERDAY, TODAY, 100),
+                    "one batch at a time");
+            CycleReport resumed = p.runOnce();
+            assertEquals(BatchKind.REPAIR, resumed.getKind().get());
+            assertEquals(1, wh.accessCount(hour(YESTERDAY), "f"));
+            assertEquals(DeadLetter.Status.RESOLVED,
+                    wh.letter(a.getQueryId(), DeadLetter.Kind.ANALYSIS_ERROR).getStatus());
+        }
+
+        @Test
+        void rebuildRecomputesDaysExactlyAndSurvivesACrash() {
+            audit(YESTERDAY.plusHours(1), "alice", QUERY);
+            audit(YESTERDAY.plusHours(2), "bob", QUERY);
+            audit(YESTERDAY.plusHours(3), "alice", INSERT);
+            audit(TODAY.plusHours(1), "carol", INSERT);
+            AuditLogSyncPipeline p = pipeline();
+            drain(p);
+            Map<String, String> usage = wh.usageSnapshot();
+            Map<String, String> lineage = wh.lineageSnapshot();
+            assertTrue(lineage.values().stream().anyMatch(v -> v.contains("count=2")), "two days of facts");
+
+            // corruption a rebuild has to repair, e.g. counts of an analyzer bug
+            wh.usage.get(hour(YESTERDAY.plusHours(1)) + "|amount").access += 40;
+            wh.crashAfter.put("purge_usage", 1);
+            assertThrows(PipelineException.class, () -> p.rebuild(YESTERDAY, TODAY));
+            CycleReport rebuilt = p.runOnce();
+            assertEquals(BatchKind.REBUILD, rebuilt.getKind().get());
+            assertEquals(3, rebuilt.getRecords());
+            assertEquals(usage, wh.usageSnapshot());
+            assertEquals(lineage, wh.lineageSnapshot(), "lineage recomputed from both days of facts");
+
+            CycleReport twice = p.rebuild(YESTERDAY, TODAY);
+            assertEquals(CycleReport.Outcome.COMMITTED, twice.getOutcome());
+            assertEquals(usage, wh.usageSnapshot(), "a rebuild is repeatable");
+            assertEquals(lineage, wh.lineageSnapshot());
+        }
+
+        @Test
+        void rebuildAfterAnAnalyzerChangeReplacesEdgesAndResolvesDeadLetters() {
+            AuditLogRecord flaky = audit(YESTERDAY.plusHours(1), "alice", "SELECT f FROM sales.flaky");
+            audit(YESTERDAY.plusHours(2), "bob", INSERT);
+            metadata.fail("flaky", new IllegalStateException("analyzer bug"));
+            AuditLogSyncPipeline p = pipeline();
+            drain(p);
+            assertTrue(wh.lineage.values().stream().anyMatch(l -> l.target.getColumn().equals("gmv")));
+
+            metadata.heal();
+            metadata.delegate.register("default_catalog.dw.user_gmv", "uid", "total");
+            p.rebuild(YESTERDAY, TODAY);
+
+            assertTrue(wh.lineage.values().stream().noneMatch(l -> l.target.getColumn().equals("gmv")),
+                    "the edge without facts any more is deleted");
+            assertTrue(wh.lineage.values().stream().anyMatch(l -> l.target.getColumn().equals("total")));
+            assertEquals(DeadLetter.Status.RESOLVED,
+                    wh.letter(flaky.getQueryId(), DeadLetter.Kind.ANALYSIS_ERROR).getStatus());
+            assertEquals(1, wh.accessCount(hour(YESTERDAY.plusHours(1)), "f"));
+        }
+
+        @Test
+        void rebuildRefusesWhatItCannotRecompute() {
+            audit(YESTERDAY.plusHours(1), "alice", QUERY);
+            AuditLogSyncPipeline p = pipeline();
+            drain(p);
+            assertThrows(IllegalArgumentException.class, () -> p.rebuild(TODAY, TODAY.plusDays(1)),
+                    "today is not committed yet");
+            assertThrows(IllegalArgumentException.class, () -> p.rebuild(YESTERDAY.plusHours(1), TODAY));
+            wh.deleteAudit(r -> true);
+            IllegalStateException gone = assertThrows(IllegalStateException.class,
+                    () -> p.rebuild(YESTERDAY, TODAY));
+            assertTrue(gone.getMessage().contains("audit retention"));
+            assertFalse(checkpoint().getPending().isPresent());
+        }
+    }
+
+    // ================================================================================================ misc
+
+    @Test
+    void createdObjectsAreInvalidatedInTheMetadataCache() {
+        audit(YESTERDAY.plusMinutes(1), "alice", "CREATE TABLE dw.t2 AS SELECT user_id FROM sales.orders");
+        pipeline().runOnce();
+        assertTrue(metadata.invalidated.contains("default_catalog.dw.t2"));
     }
 
     @Test
-    void scheduledRunnerProcessesInTheBackground() throws Exception {
-        seedFirstBatch();
-        AuditLogSyncPipeline p = pipeline("node-1", 100, 1_000, sink(), metadata);
+    void scheduledRunnerCatchesUp() throws Exception {
+        audit(YESTERDAY.plusMinutes(1), "alice", QUERY);
+        AuditLogSyncPipeline p = pipeline();
         p.start(Duration.ofMillis(50));
-        assertThrows(IllegalStateException.class, () -> p.start(Duration.ofMillis(50)));
         long deadline = System.currentTimeMillis() + 10_000;
-        while (p.getMetrics().getCommittedCycles() < 1 && System.currentTimeMillis() < deadline) {
+        while (store.load(PIPELINE).map(c -> c.getCommittedUntil().isBefore(NOW.minusMinutes(5))).orElse(true)
+                && System.currentTimeMillis() < deadline) {
             Thread.sleep(20);
         }
-        p.close();
-        assertEquals(1, p.getMetrics().getCommittedCycles());
-        assertFalse(checkpoint().getPending().isPresent());
-    }
-
-    /** Review R4-05: a checkpoint store that does not persist the commit must fail, never loop. */
-    @Test
-    void unpersistedCommitFailsInsteadOfLoopingForever() throws Exception {
-        try (Connection c = sr.dataSource.getConnection(); Statement st = c.createStatement()) {
-            st.execute("CREATE TABLE audit_lineage_db.cp_without_pk (pipeline_name VARCHAR(64), "
-                    + "watermark_time TIMESTAMP, watermark_query_id VARCHAR(64), owner VARCHAR(128), "
-                    + "lease_expire_time TIMESTAMP, processed_rows BIGINT, pending_batch_id VARCHAR(64), "
-                    + "pending_end_time TIMESTAMP, pending_end_query_id VARCHAR(64), update_time TIMESTAMP)");
-        }
-        JdbcCheckpointStore appending = new JdbcCheckpointStore(sr.dataSource, "audit_lineage_db.cp_without_pk",
-                CLOCK, "INSERT");
-        Watermark start = Watermark.startingAt(NOW.minusDays(1));
-        assertTrue(appending.tryAcquireLease("p", "o", Duration.ofMinutes(1), start));
-        appending.savePending("p", "o", Duration.ofMinutes(1),
-                new CheckpointStore.PendingBatch("b", new Watermark(NOW, "q")));
-        assertThrows(PipelineException.class, () -> appending.commit("p", "o", Duration.ofMinutes(1),
-                new Watermark(NOW, "q"), 1));
+        assertEquals(NOW.minusMinutes(5), checkpoint().getCommittedUntil());
+        assertThrows(IllegalStateException.class, () -> p.start(Duration.ofSeconds(1)));
+        assertEquals(1, wh.accessCount(hour(YESTERDAY), "amount"));
     }
 
     @Test
     void configValidation() {
-        assertThrows(IllegalArgumentException.class,
-                () -> PipelineConfig.builder("", "o").build());
-        assertThrows(IllegalArgumentException.class,
-                () -> PipelineConfig.builder("p", "o").pageSize(10).maxRecordsPerCycle(5).build());
-        assertThrows(IllegalArgumentException.class,
-                () -> PipelineConfig.builder("p", "o").analyzerThreads(0).build());
-        assertThrows(IllegalArgumentException.class,
-                () -> PipelineConfig.builder("p", "o").leaseTtl(Duration.ZERO).build());
-        assertThrows(IllegalArgumentException.class,
-                () -> new JdbcAuditLogSource(sr.dataSource, "t; drop table x", 1));
-        assertEquals(Instant.parse("2024-06-18T12:00:00Z"), CLOCK.instant());
+        assertThrows(IllegalArgumentException.class, () -> PipelineConfig.builder("", "o").build());
+        assertThrows(IllegalArgumentException.class, () -> PipelineConfig.builder("p", "o").pageSize(10)
+                .maxRecordsPerBatch(5).build());
+        assertThrows(IllegalArgumentException.class, () -> PipelineConfig.builder("p", "o")
+                .labelRetention(Duration.ZERO).build());
+        assertThrows(IllegalArgumentException.class, () -> PipelineConfig.builder("p", "o")
+                .lateArrival(Duration.ofSeconds(-1)).build());
+        assertThrows(IllegalArgumentException.class, () -> PipelineConfig.builder("p", "o")
+                .alertAfterAttempts(0).build());
+        PipelineConfig d = PipelineConfig.builder("p", "o").build();
+        assertEquals(Duration.ofMinutes(5), d.getSliceSize());
+        assertEquals(Duration.ofDays(2), d.getLabelRetention());
+        assertEquals(d.getInitialStart(), d.getInitialStart().toLocalDate().atStartOfDay(),
+                "default start: yesterday 00:00");
+        assertNotNull(d.getReconcileWindow());
+    }
+
+    /**
+     * Metadata whose answers for one table can be broken on demand.
+     */
+    static final class FlakyMetadata implements MetadataProvider {
+        final InMemoryMetadataProvider delegate;
+        final List<String> invalidated = new ArrayList<>();
+        volatile String brokenTable;
+        volatile RuntimeException failure;
+
+        FlakyMetadata(InMemoryMetadataProvider delegate) {
+            this.delegate = delegate;
+        }
+
+        void fail(String table, RuntimeException e) {
+            brokenTable = table;
+            failure = e;
+        }
+
+        void heal() {
+            brokenTable = null;
+        }
+
+        @Override
+        public Optional<TableSchema> getTableSchema(TableIdentifier table) {
+            String broken = brokenTable;
+            if (broken != null && table.getTable().equalsIgnoreCase(broken)) {
+                throw failure;
+            }
+            return delegate.getTableSchema(table);
+        }
+
+        @Override
+        public synchronized void invalidate(TableIdentifier table) {
+            invalidated.add(table.toString());
+        }
+
+        @Override
+        public synchronized void invalidateAll() {
+            invalidated.add("*");
+        }
     }
 }

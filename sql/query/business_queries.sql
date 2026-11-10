@@ -88,3 +88,18 @@ ORDER BY target_db, target_table, target_column;
 
 -- Q8. Multi-hop upstream (up to 5 hops) of a column, DIRECT edges only, via recursive expansion in the application:
 --     StarRocks 3.1 has no recursive CTE, so the service repeats Q6 breadth-first with a visited set.
+
+-- Q9. Daily write activity into one table over the last 30 days, from the daily lineage facts
+--     (audit_column_lineage only keeps the totals; the daily table keeps the history, Stage 5).
+SELECT stat_day, target_column, source_db, source_table, source_column, SUM(exec_count) AS executions
+FROM audit_lineage_db.audit_column_lineage_daily
+WHERE target_catalog = '${catalog}' AND target_db = '${db}' AND target_table = '${table}'
+  AND stat_day >= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY)
+GROUP BY stat_day, target_column, source_db, source_table, source_column
+ORDER BY stat_day, target_column, source_table, source_column;
+
+-- Q10. Pipeline health: open dead letters by kind and the last committed batches.
+SELECT kind, status, COUNT(*) AS letters, MIN(audit_time) AS oldest, MAX(audit_time) AS newest
+FROM audit_lineage_db.audit_lineage_dead_letter
+GROUP BY kind, status
+ORDER BY kind, status;

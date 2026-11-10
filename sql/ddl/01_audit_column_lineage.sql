@@ -7,10 +7,11 @@
 --            ColumnLineageEdge#edgeId(). The natural 9-column key (up to 9 x 256 bytes) violates the
 --            128-byte encoded primary key limit of StarRocks 3.1, a fixed 64-byte hash does not.
 -- Sort key : (target_db, target_table, target_column) so "where does this column come from" is a prefix-index scan.
--- Counters : exec_count / first_seen_time are merged by the pipeline through audit_column_lineage_stage
---            (see 02_audit_column_lineage_stage.sql) because a Primary Key table cannot SUM on upsert.
--- Replay   : last_batch_id makes the merge idempotent: a batch that was already merged is skipped by the merge
---            statement itself, so a crash between merge and merge log cannot double exec_count.
+-- Counters : the table is a PROJECTION of audit_column_lineage_daily (02): first_seen_time = MIN, last_seen_time =
+--            MAX, exec_count = SUM over every day of the edge; the other attributes come from the latest day.
+--            It is never incremented: after each batch the pipeline RECOMPUTES the rows of the edges the batch
+--            touched (StarRocksSink#refreshLineage), so the refresh can run any number of times (Stage 5).
+--            Edges whose daily facts are all gone (rebuild) are deleted by the same refresh.
 -- =====================================================================================================================
 CREATE TABLE IF NOT EXISTS audit_lineage_db.audit_column_lineage (
     edge_id          VARCHAR(64)    NOT NULL COMMENT "sha256(target4, source4, lineage_type) - physical primary key",
@@ -32,8 +33,7 @@ CREATE TABLE IF NOT EXISTS audit_lineage_db.audit_column_lineage (
     first_seen_time  DATETIME       NOT NULL COMMENT "audit timestamp of the first statement producing the edge",
     last_seen_time   DATETIME       NOT NULL COMMENT "audit timestamp of the last statement producing the edge",
     exec_count       BIGINT         NOT NULL DEFAULT "0" COMMENT "number of successful statements producing the edge",
-    last_batch_id    VARCHAR(64)    NULL     COMMENT "pipeline batch of the last merge - replay guard (Stage 4 R4-01)",
-    update_time      DATETIME       NOT NULL COMMENT "wall clock time of the last merge"
+    update_time      DATETIME       NOT NULL COMMENT "wall clock time of the last refresh"
 ) ENGINE = OLAP
 PRIMARY KEY (edge_id)
 COMMENT "Column level lineage extracted from starrocks_audit_db__.starrocks_audit_tbl__"

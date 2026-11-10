@@ -3,8 +3,9 @@
 -- docs/staging-smoke-test.md section 6.
 -- =====================================================================================================================
 
--- V1. checkpoint: pending_batch_id must be NULL, watermark at or after the last scenario statement
-SELECT pipeline_name, watermark_time, watermark_query_id, owner, processed_rows, pending_batch_id
+-- V1. checkpoint: pending_batch_id must be NULL, committed_until after the last scenario statement, attempts empty
+SELECT pipeline_name, committed_until, coverage_start, owner, processed_rows, pending_batch_id, pending_step,
+       pending_attempts, last_error, last_reconcile_time
 FROM audit_lineage_db.audit_lineage_sync_checkpoint WHERE pipeline_name = 'audit_lineage_smoke';
 
 -- V2. column usage of the scenario (5 rows expected)
@@ -30,3 +31,15 @@ SELECT target_table, target_column, source_table, source_column, lineage_type, t
 FROM audit_lineage_db.audit_column_lineage
 WHERE target_db = 'lineage_smoke_db' AND target_table IN ('user_gmv', 'v_orders')
 ORDER BY target_table, target_column, lineage_type, source_table, source_column;
+
+-- V5. dead letters of the smoke pipeline: none expected (F1 failed in StarRocks and is skipped, M1 is a management
+--     statement). Any row here is a statement the engine accepted but the analyzer could not handle: report it.
+SELECT kind, status, query_id, error_message, LEFT(stmt, 120) AS stmt
+FROM audit_lineage_db.audit_lineage_dead_letter WHERE pipeline_name = 'audit_lineage_smoke'
+ORDER BY audit_time, query_id;
+
+-- V6. committed batches of the smoke pipeline with records (the scenario batch: records = 8, dead_letters = 0)
+SELECT batch_id, kind, range_start, range_end, records, succeeded, skipped, failed, usage_rows, lineage_rows,
+       dead_letters, filtered_rows, attempts
+FROM audit_lineage_db.audit_lineage_batch_log WHERE pipeline_name = 'audit_lineage_smoke' AND records > 0
+ORDER BY committed_time;

@@ -86,6 +86,18 @@ public final class StarRocksSqlAnalyzer {
      */
     public SqlParseResult analyze(String queryId, String sql, NamespaceContext namespace) {
         Objects.requireNonNull(namespace, "namespace");
+        try {
+            return doAnalyze(queryId, sql, namespace);
+        } catch (MetadataAccessException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            // an analyzer defect on one statement must not fail the batch: it becomes a dead letter and can be
+            // repaired once the analyzer is fixed
+            return SqlParseResult.of(queryId, ParseStatus.ANALYSIS_ERROR, "internal analyzer error: " + e);
+        }
+    }
+
+    private SqlParseResult doAnalyze(String queryId, String sql, NamespaceContext namespace) {
         SqlSanitizer.SanitizedSql sanitized = SqlSanitizer.sanitize(sql);
         if (sanitized.isEmpty()) {
             return SqlParseResult.of(queryId, ParseStatus.SKIPPED_EMPTY, "empty statement");

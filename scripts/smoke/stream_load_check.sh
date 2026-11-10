@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # =====================================================================================================================
 # Smoke test step 3.5: Stream Load exactly as StarRocksSink does it (FE redirect, Expect: 100-continue, JSON array,
-# columns mapping with to_bitmap / hll_hash), then the same label again (must be "Label Already Exists").
+# columns mapping with to_bitmap / hll_hash), then the same label again (must be "Label Already Exists"), then the
+# label state the pipeline asks before repeating an additive load (must be VISIBLE; an unused label is UNKNOWN).
 # Usage: SR_FE_HOST=fe-host SR_USER=lineage_etl SR_PASSWORD=*** ./stream_load_check.sh
 # =====================================================================================================================
 set -euo pipefail
@@ -46,4 +47,12 @@ echo "== 2. same label again (expected Status=Label Already Exists, ExistingJobS
 load audit_column_hourly_usage "$LABEL" "$COLUMNS" "$WORK/usage.json"
 echo "== 3. user dictionary load (expected Status=Success, NumberLoadedRows=2)"
 load audit_user_dict "${LABEL}_dict" "user_name,user_id,first_seen_time" "$WORK/dict.json"
+echo "== 4. label state of the usage load (expected state=VISIBLE)"
+curl --silent --show-error -u "$SR_USER:$SR_PASSWORD" \
+     "http://$SR_FE_HOST:$HTTP_PORT/api/audit_lineage_db/get_load_state?label=$LABEL"
+echo
+echo "== 5. label state of an unused label (expected state=UNKNOWN)"
+curl --silent --show-error -u "$SR_USER:$SR_PASSWORD" \
+     "http://$SR_FE_HOST:$HTTP_PORT/api/audit_lineage_db/get_load_state?label=${LABEL}_never_used"
+echo
 echo "== now run section 3.5 of 03_manual_checks.sql"
