@@ -560,11 +560,14 @@ public final class StarRocksAuditAstVisitor extends StarRocksBaseVisitor<Void> {
 
     private void analyzeSelectList(List<StarRocksParser.SelectItemContext> items, Scope scope) {
         List<RelationField> outputs = new ArrayList<>();
+        List<RelationDescriptor> origins = new ArrayList<>();
         int reliablePrefix = -1;
         Set<String> unexpanded = new LinkedHashSet<>();
         for (StarRocksParser.SelectItemContext item : items) {
             if (item instanceof StarRocksParser.SelectSingleContext) {
-                outputs.add(analyzeSelectSingle((StarRocksParser.SelectSingleContext) item, outputs.size()));
+                StarRocksParser.SelectSingleContext single = (StarRocksParser.SelectSingleContext) item;
+                outputs.add(analyzeSelectSingle(single, outputs.size()));
+                origins.add(bareColumnOrigin(single.expression()));
             } else {
                 StarRocksParser.SelectAllContext all = (StarRocksParser.SelectAllContext) item;
                 List<String> qualifier = all.qualifiedName() == null ? Collections.emptyList()
@@ -575,6 +578,7 @@ public final class StarRocksAuditAstVisitor extends StarRocksBaseVisitor<Void> {
                     recordUsage(rc, ClauseType.SELECT);
                     outputs.add(new RelationField(rc.getField().getName(), outputs.size(), rc.lineage(),
                             rc.getField().getName()));
+                    origins.add(rc.getRelation().orElse(null));
                 }
                 if (!expansion.isComplete()) {
                     if (reliablePrefix < 0) {
@@ -586,7 +590,41 @@ public final class StarRocksAuditAstVisitor extends StarRocksBaseVisitor<Void> {
                 }
             }
         }
-        scope.setSelectOutputs(outputs, reliablePrefix < 0 ? outputs.size() : reliablePrefix, unexpanded);
+        scope.setSelectOutputs(outputs, reliablePrefix < 0 ? outputs.size() : reliablePrefix, unexpanded, origins);
+    }
+
+    /**
+     * The relation of this block a select item that is a bare column reference ({@code c}, {@code t.c}) resolves
+     * to; {@code null} for any other item (expression, outer reference, alias, lambda, struct field). StarRocks 3.1
+     * qualifies such an output with that relation, which makes {@code ORDER BY t.alias} valid.
+     */
+    private RelationDescriptor bareColumnOrigin(StarRocksParser.ExpressionContext expression) {
+        ParserRuleContext node = expression;
+        while (node.getChildCount() == 1 && node.getChild(0) instanceof ParserRuleContext
+                && !(node instanceof StarRocksParser.ColumnRefContext)
+                && !(node instanceof StarRocksParser.DereferenceContext)) {
+            node = (ParserRuleContext) node.getChild(0);
+        }
+        List<String> parts;
+        if (node instanceof StarRocksParser.ColumnRefContext) {
+            parts = Collections.singletonList(identifierText(((StarRocksParser.ColumnRefContext) node)
+                    .columnReference().identifier()));
+        } else if (node instanceof StarRocksParser.DereferenceContext) {
+            parts = dereferenceParts((StarRocksParser.DereferenceContext) node);
+        } else {
+            return null;
+        }
+        if (parts == null) {
+            return null;
+        }
+        try {
+            ResolvedColumn rc = stack.resolveColumn(parts, AliasPolicy.NONE);
+            return rc.getKind() == ResolvedColumn.Kind.RELATION_FIELD && rc.getOuterDepth() == 0
+                    && rc.getSubfieldPath().isEmpty() ? rc.getRelation().orElse(null) : null;
+        } catch (SemanticAnalysisException e) {
+            // resolved leniently (stale metadata) during the item's analysis: no reliable origin
+            return null;
+        }
     }
 
     private RelationField analyzeSelectSingle(StarRocksParser.SelectSingleContext ctx, int index) {

@@ -15,7 +15,7 @@ mvn -B clean package
 ## 2. 建表与授权（管理员执行一次）
 
 1. 执行 `sql/ddl/00..09`。BE 少于 3 台时，把其中的 `replication_num` 改成实际 BE 数。如果以前建过旧版的表（`audit_column_lineage_stage` / `audit_lineage_merge_log`），先删除 `audit_lineage_db` 再建。
-2. 把 `scripts/smoke/01_grants.sql` 中的 `CHANGE_ME_ETL` 改成正式密码，然后执行。**审计库必须已经存在**，否则脚本会在中途报 `cannot find db` 并停止，账号最终没有任何权限（`check` 会检查出来）。
+2. 把 `scripts/smoke/01_grants.sql` 中的 `CHANGE_ME_ETL` 改成正式密码，然后执行。脚本中包含对视图和物化视图的 SELECT 授权（3.x 中它们是独立的权限对象，不授权就看不到它们的元数据）。**审计库必须已经存在**，否则脚本会在中途报 `cannot find db` 并停止，账号最终没有任何权限（`check` 会检查出来）。
 
 ## 3. 配置 `/opt/audit-lineage/lineage.properties`
 

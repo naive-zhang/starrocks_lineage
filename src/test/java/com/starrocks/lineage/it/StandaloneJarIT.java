@@ -22,6 +22,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -51,12 +52,15 @@ class StandaloneJarIT {
         sr.execute("DROP DATABASE IF EXISTS jar_shop FORCE", "CREATE DATABASE jar_shop",
                 "CREATE TABLE jar_shop.orders (order_id BIGINT, user_id BIGINT, amount DECIMAL(18, 2)) "
                         + "DISTRIBUTED BY HASH(order_id)" + props,
-                "CREATE TABLE jar_shop.gmv (uid BIGINT, gmv DECIMAL(38, 2)) DISTRIBUTED BY HASH(uid)" + props);
+                "CREATE TABLE jar_shop.gmv (uid BIGINT, gmv DECIMAL(38, 2)) DISTRIBUTED BY HASH(uid)" + props,
+                "CREATE VIEW jar_shop.v_orders AS SELECT order_id, user_id FROM jar_shop.orders");
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC).withNano(0);
         audit("j1", now.minusMinutes(50), "alice", "SELECT amount FROM orders WHERE user_id = 1");
         audit("j2", now.minusMinutes(40), "etl", "INSERT INTO gmv SELECT user_id, SUM(amount) FROM orders "
                 + "GROUP BY user_id");
         audit("j3", now.minusMinutes(30), "bob", "SELEC broken");
+        // views are separate privilege objects: without the view grant of 01_grants.sql this is analysed blind
+        audit("j4", now.minusMinutes(20), "carol", "SELECT * FROM v_orders");
     }
 
     private static void audit(String id, LocalDateTime at, String user, String stmt) {
@@ -150,14 +154,15 @@ class StandaloneJarIT {
 
         Run analyze = exec(env(), "analyze", "2");
         assertEquals(0, analyze.exit, analyze.out);
-        assertTrue(analyze.out.contains("ANALYZE total=3 {SUCCESS=2, PARSE_ERROR=1}"), analyze.out);
+        assertTrue(analyze.out.contains("ANALYZE total=4 {SUCCESS=3, PARSE_ERROR=1} degraded=0"), analyze.out);
+        assertFalse(analyze.out.contains("without metadata"), "the view is visible to lineage_etl\n" + analyze.out);
         assertTrue(analyze.out.contains("FAIL PARSE_ERROR j3"), analyze.out);
         assertEquals(0L, num(sr.query("SELECT COUNT(*) c FROM audit_lineage_db.audit_lineage_batch_member")
                 .get(0).get("c")), "analyze writes nothing");
 
         Run run = exec(env(), "run");
         assertEquals(0, run.exit, run.out);
-        assertTrue(run.out.contains("SUMMARY") && run.out.contains("records=3 last_outcome=IDLE"), run.out);
+        assertTrue(run.out.contains("SUMMARY") && run.out.contains("records=4 last_outcome=IDLE"), run.out);
         assertTrue(num(sr.query("SELECT COUNT(*) c FROM audit_lineage_db.audit_column_lineage WHERE "
                 + "target_table = 'gmv'").get(0).get("c")) > 0, "lineage written");
         assertEquals(1L, num(sr.query("SELECT SUM(access_query_cnt) c FROM audit_lineage_db"

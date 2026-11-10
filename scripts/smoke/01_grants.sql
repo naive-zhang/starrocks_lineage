@@ -9,8 +9,12 @@ CREATE USER IF NOT EXISTS 'lineage_etl'@'%' IDENTIFIED BY 'CHANGE_ME_ETL';
 GRANT SELECT ON TABLE starrocks_audit_db__.starrocks_audit_tbl__ TO USER 'lineage_etl'@'%';
 GRANT SELECT, INSERT, DELETE ON ALL TABLES IN DATABASE audit_lineage_db TO USER 'lineage_etl'@'%';
 
--- metadata visibility of default_catalog
+-- metadata visibility of default_catalog. Views and materialized views are separate privilege objects in 3.x:
+-- without the last two grants information_schema.columns hides them and every statement reading a view is analysed
+-- without metadata (verified on 3.1.17; found by `check` / `analyze` on the production cluster)
 GRANT SELECT ON ALL TABLES IN ALL DATABASES TO USER 'lineage_etl'@'%';
+GRANT SELECT ON ALL VIEWS IN ALL DATABASES TO USER 'lineage_etl'@'%';
+GRANT SELECT ON ALL MATERIALIZED VIEWS IN ALL DATABASES TO USER 'lineage_etl'@'%';
 -- one line per external catalog that audited queries use, e.g.:
 -- GRANT USAGE ON CATALOG hive_catalog TO USER 'lineage_etl'@'%';
 

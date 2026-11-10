@@ -237,22 +237,40 @@ final class Preflight {
         for (String db : excluded) {
             in.append(in.length() == 0 ? "" : ", ").append('\'').append(db).append('\'');
         }
-        long tables;
+        long tables = 0;
+        long views = 0;
         long databases;
         try (Connection c = ds.getConnection(); Statement st = c.createStatement();
-             ResultSet rs = st.executeQuery("SELECT COUNT(*), COUNT(DISTINCT TABLE_SCHEMA) FROM "
-                     + "information_schema.tables WHERE TABLE_SCHEMA NOT IN (" + in + ")")) {
-            rs.next();
-            tables = rs.getLong(1);
-            databases = rs.getLong(2);
+             ResultSet rs = st.executeQuery("SELECT TABLE_TYPE, COUNT(*) FROM information_schema.tables "
+                     + "WHERE TABLE_SCHEMA NOT IN (" + in + ") GROUP BY TABLE_TYPE")) {
+            while (rs.next()) {
+                String type = String.valueOf(rs.getString(1)).toUpperCase(Locale.ROOT);
+                if (type.contains("VIEW")) {
+                    views += rs.getLong(2);
+                } else {
+                    tables += rs.getLong(2);
+                }
+            }
+            try (ResultSet d = st.executeQuery("SELECT COUNT(DISTINCT TABLE_SCHEMA) FROM information_schema.tables "
+                    + "WHERE TABLE_SCHEMA NOT IN (" + in + ")")) {
+                d.next();
+                databases = d.getLong(1);
+            }
         }
         if (tables == 0) {
             return new Item("metadata_visibility", Level.FAIL, "no business table is visible to "
                     + config.get("SR_USER") + ": grant SELECT (see scripts/smoke/01_grants.sql), otherwise every "
                     + "statement is analysed without metadata");
         }
-        return new Item("metadata_visibility", Level.OK, tables + " business tables in " + databases
-                + " databases visible (compare with the cluster; invisible tables degrade the lineage - run "
+        String detail = tables + " tables and " + views + " views / materialized views in " + databases
+                + " databases visible";
+        if (views == 0) {
+            return new Item("metadata_visibility", Level.WARN, detail + " - views are separate privilege objects: "
+                    + "if the cluster has views, GRANT SELECT ON ALL VIEWS IN ALL DATABASES and ON ALL MATERIALIZED "
+                    + "VIEWS IN ALL DATABASES (scripts/smoke/01_grants.sql), otherwise statements on views are "
+                    + "analysed without metadata");
+        }
+        return new Item("metadata_visibility", Level.OK, detail + " (invisible objects degrade the lineage - run "
                 + "`analyze`)");
     }
 

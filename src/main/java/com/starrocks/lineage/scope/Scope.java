@@ -51,6 +51,8 @@ public final class Scope {
     private final Set<String> usingColumns = new LinkedHashSet<>();
     private final Set<ColumnIdentifier> controlSources = new LinkedHashSet<>();
     private List<RelationField> selectOutputs = Collections.emptyList();
+    /** Per select output: the relation a bare column reference resolved to in this block, else {@code null}. */
+    private List<RelationDescriptor> selectOutputOrigins = Collections.emptyList();
     private int selectReliablePrefix;
     private final Set<String> selectUnexpandedSources = new LinkedHashSet<>();
 
@@ -205,7 +207,22 @@ public final class Scope {
      */
     public void setSelectOutputs(List<RelationField> outputs, int reliablePrefix,
                                  Collection<String> unexpandedSources) {
+        setSelectOutputs(outputs, reliablePrefix, unexpandedSources, Collections.nCopies(outputs.size(), null));
+    }
+
+    /**
+     * @param origins per output, the relation of this block a bare column reference ({@code t.c}, {@code c},
+     *                {@code t.*}) resolved to, or {@code null} for any other select item: StarRocks 3.1 keeps that
+     *                relation as the qualifier of the output field, so {@code ORDER BY t.alias} works (verified on
+     *                3.1.17, see {@link #resolveLocal})
+     */
+    public void setSelectOutputs(List<RelationField> outputs, int reliablePrefix,
+                                 Collection<String> unexpandedSources, List<RelationDescriptor> origins) {
         requireKind(Kind.QUERY_BLOCK);
+        if (origins.size() != outputs.size()) {
+            throw new IllegalArgumentException("one origin per output expected");
+        }
+        this.selectOutputOrigins = Collections.unmodifiableList(new ArrayList<>(origins));
         List<RelationField> indexed = new ArrayList<>(outputs.size());
         for (int i = 0; i < outputs.size(); i++) {
             indexed.add(outputs.get(i).withIndex(i));
@@ -294,7 +311,11 @@ public final class Scope {
      *   <li>{@link AliasPolicy#PREFER_ALIAS} and one part: a select alias wins.</li>
      *   <li>Qualified interpretation, longest qualifier first ({@code k = min(3, n-1) .. 1}): qualifier
      *       {@code p0..pk-1} must match exactly one visible relation and {@code pk} must be one of its fields
-     *       (or an on-demand field when its schema is unknown); {@code pk+1..} is a struct path.</li>
+     *       (or an on-demand field when its schema is unknown); {@code pk+1..} is a struct path. When the relation
+     *       has no such field and the clause sees select aliases (ORDER BY / GROUP BY / HAVING, not WHERE), the
+     *       name may be a <b>qualified select alias</b>: StarRocks 3.1 qualifies an output field with the relation
+     *       of a bare column item, so {@code SELECT t.c AS a ... ORDER BY t.a} is valid - but not for an expression
+     *       item, nor with another qualifier (verified on 3.1.17).</li>
      *   <li>Unqualified interpretation: {@code p0} is a column of exactly one visible relation, the rest is a struct
      *       path. Several matches are ambiguous unless the column is a {@code USING} column or every match carries
      *       the same lineage. No match in known schemas: the single open relation, if any, owns the column.</li>
@@ -329,7 +350,19 @@ public final class Scope {
             RelationDescriptor rel = matching.get(0);
             String column = parts.get(k);
             List<String> path = new ArrayList<>(parts.subList(k + 1, parts.size()));
-            Optional<ResolvedColumn> hit = fieldOf(rel, column, path, true);
+            Optional<ResolvedColumn> hit = fieldOf(rel, column, path, false);
+            if (hit.isPresent()) {
+                return hit;
+            }
+            if (policy != AliasPolicy.NONE && path.isEmpty()) {
+                // before an on-demand field: an alias of a bare column of exactly this relation is evidence, an
+                // invented column of a relation without metadata is a guess
+                Optional<ResolvedColumn> alias = resolveQualifiedSelectAlias(rel, column);
+                if (alias.isPresent()) {
+                    return alias;
+                }
+            }
+            hit = fieldOf(rel, column, path, true);
             if (hit.isPresent()) {
                 return hit;
             }
@@ -410,6 +443,20 @@ public final class Scope {
         if (allowOnDemand) {
             return rel.onDemandField(column).map(f -> new ResolvedColumn(ResolvedColumn.Kind.RELATION_FIELD, rel, f,
                     path, 0, true));
+        }
+        return Optional.empty();
+    }
+
+    private Optional<ResolvedColumn> resolveQualifiedSelectAlias(RelationDescriptor rel, String name) {
+        if (kind != Kind.QUERY_BLOCK) {
+            return Optional.empty();
+        }
+        for (int i = 0; i < selectOutputs.size(); i++) {
+            RelationField f = selectOutputs.get(i);
+            if (selectOutputOrigins.get(i) == rel && f.hasName(name)) {
+                return Optional.of(new ResolvedColumn(ResolvedColumn.Kind.SELECT_ALIAS, null, f,
+                        Collections.emptyList(), 0, false));
+            }
         }
         return Optional.empty();
     }
