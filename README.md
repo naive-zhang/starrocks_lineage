@@ -53,6 +53,7 @@ See [docs/container-verification.md](docs/container-verification.md) for what th
 | 3 | `StarRocksAuditAstVisitor` and `StarRocksSqlAnalyzer` | ✅ [docs/stage3-ast-visitor.md](docs/stage3-ast-visitor.md) |
 | 4 | Incremental pipeline, hourly pre-aggregation, acceptance tests | ✅ [docs/stage4-pipeline.md](docs/stage4-pipeline.md) |
 | 5 | Reliability: first run across days, poison batches, fencing, label retention, deterministic replay, late records, dead letters / repair / rebuild | ✅ [docs/stage5-reliability.md](docs/stage5-reliability.md) |
+| 6 | Acceptance on 30 production INSERT statements with the full production schema (997 tables), cross-checked on StarRocks 3.1.17; Stream Load routing fix for large loads | ✅ [docs/stage6-production-inserts.md](docs/stage6-production-inserts.md) |
 
 ## Running the pipeline
 

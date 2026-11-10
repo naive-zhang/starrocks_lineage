@@ -1,0 +1,1742 @@
+01 T lbdb.dws_busi_inbill_site_wgt_rt
+01 T lbdb.tmp_busi_inbill_site_wgt_rt_1
+01 D calc_weight_ccd <- lbdb.tmp_busi_inbill_site_wgt_rt_1.calc_weight_ccd IDENTITY
+01 D class_area_code <- lbdb.tmp_busi_inbill_site_wgt_rt_1.class_area_code IDENTITY
+01 D parent_site_code <- lbdb.tmp_busi_inbill_site_wgt_rt_1.parent_site_code IDENTITY
+01 D stats_date <- lbdb.tmp_busi_inbill_site_wgt_rt_1.stats_date IDENTITY
+01 D stats_date_bgn_tm <- lbdb.tmp_busi_inbill_site_wgt_rt_1.stats_date_bgn_tm IDENTITY
+01 D stats_date_end_tm <- <constant> CONSTANT
+01 D stats_hour <- lbdb.tmp_busi_inbill_site_wgt_rt_1.stats_hour IDENTITY
+01 D stats_min <- lbdb.tmp_busi_inbill_site_wgt_rt_1.stats_min IDENTITY
+01 D stats_site_code <- lbdb.tmp_busi_inbill_site_wgt_rt_1.stats_site_code IDENTITY
+01 D stats_site_lvl <- lbdb.tmp_busi_inbill_site_wgt_rt_1.stats_site_lvl IDENTITY
+01 D stats_site_name <- lbdb.tmp_busi_inbill_site_wgt_rt_1.stats_site_name IDENTITY
+01 D target_val <- lbdb.tmp_busi_inbill_site_wgt_rt_1.target_val IDENTITY
+01 D total_ticket_ccd <- lbdb.tmp_busi_inbill_site_wgt_rt_1.total_ticket_ccd IDENTITY
+01 D total_workday_cnt_cur_mon <- lbdb.tmp_busi_inbill_site_wgt_rt_1.total_workday_cnt_cur_mon IDENTITY
+01 D weight_group <- lbdb.tmp_busi_inbill_site_wgt_rt_1.weight_group IDENTITY
+01 D weight_type <- lbdb.tmp_busi_inbill_site_wgt_rt_1.weight_type IDENTITY
+01 D workday_cnt_ccm <- lbdb.tmp_busi_inbill_site_wgt_rt_1.workday_cnt_ccm IDENTITY
+01 N edges=17 direct=17
+02 T lbdb.tmp_busi_inbill_site_wgt_rt_1
+02 T lbdb.tmp_busi_inbill_site_wgt_rt_2
+02 D calc_weight_ccd <- lbdb.tmp_busi_inbill_site_wgt_rt_2.calc_weight_ccd AGGREGATION
+02 D class_area_code <- lbdb.tmp_busi_inbill_site_wgt_rt_2.class_area_code IDENTITY
+02 D parent_site_code <- lbdb.tmp_busi_inbill_site_wgt_rt_2.parent_site_code IDENTITY
+02 D stats_date <- lbdb.tmp_busi_inbill_site_wgt_rt_2.stats_date IDENTITY
+02 D stats_date_bgn_tm <- lbdb.tmp_busi_inbill_site_wgt_rt_2.stats_date_bgn_tm IDENTITY
+02 D stats_date_end_tm <- lbdb.tmp_busi_inbill_site_wgt_rt_2.stats_date_end_tm IDENTITY
+02 D stats_hour <- lbdb.tmp_busi_inbill_site_wgt_rt_2.stats_hour IDENTITY
+02 D stats_min <- lbdb.tmp_busi_inbill_site_wgt_rt_2.stats_min IDENTITY
+02 D stats_site_code <- lbdb.tmp_busi_inbill_site_wgt_rt_2.stats_site_code IDENTITY
+02 D stats_site_lvl <- lbdb.tmp_busi_inbill_site_wgt_rt_2.stats_site_lvl IDENTITY
+02 D stats_site_name <- lbdb.tmp_busi_inbill_site_wgt_rt_2.stats_site_name IDENTITY
+02 D target_val <- lbdb.tmp_busi_inbill_site_wgt_rt_2.target_val IDENTITY
+02 D total_ticket_ccd <- lbdb.tmp_busi_inbill_site_wgt_rt_2.total_ticket_ccd AGGREGATION
+02 D total_workday_cnt_cur_mon <- lbdb.tmp_busi_inbill_site_wgt_rt_2.total_workday_cnt_cur_mon IDENTITY
+02 D weight_group <- lbdb.tmp_busi_inbill_site_wgt_rt_2.weight_group IDENTITY
+02 D weight_type <- lbdb.tmp_busi_inbill_site_wgt_rt_2.weight_type IDENTITY
+02 D workday_cnt_ccm <- lbdb.tmp_busi_inbill_site_wgt_rt_2.workday_cnt_ccm IDENTITY
+02 I lbdb.tmp_busi_inbill_site_wgt_rt_2.class_area_code x17
+02 I lbdb.tmp_busi_inbill_site_wgt_rt_2.parent_site_code x17
+02 I lbdb.tmp_busi_inbill_site_wgt_rt_2.stats_date x17
+02 I lbdb.tmp_busi_inbill_site_wgt_rt_2.stats_date_bgn_tm x17
+02 I lbdb.tmp_busi_inbill_site_wgt_rt_2.stats_date_end_tm x17
+02 I lbdb.tmp_busi_inbill_site_wgt_rt_2.stats_hour x17
+02 I lbdb.tmp_busi_inbill_site_wgt_rt_2.stats_min x17
+02 I lbdb.tmp_busi_inbill_site_wgt_rt_2.stats_site_code x17
+02 I lbdb.tmp_busi_inbill_site_wgt_rt_2.stats_site_lvl x17
+02 I lbdb.tmp_busi_inbill_site_wgt_rt_2.stats_site_name x17
+02 I lbdb.tmp_busi_inbill_site_wgt_rt_2.target_val x17
+02 I lbdb.tmp_busi_inbill_site_wgt_rt_2.total_workday_cnt_cur_mon x17
+02 I lbdb.tmp_busi_inbill_site_wgt_rt_2.weight_group x17
+02 I lbdb.tmp_busi_inbill_site_wgt_rt_2.weight_type x17
+02 I lbdb.tmp_busi_inbill_site_wgt_rt_2.workday_cnt_ccm x17
+02 N edges=272 direct=17
+03 T lbdb.dm_pb_bizop_org_brnch
+03 T lbdb.tmp_busi_inbill_site_wgt_rt_1
+03 T lbdb.tmp_busi_inbill_site_wgt_rt_2
+03 T lbdb.tx_bd_site_info
+03 D calc_weight_ccd <- lbdb.tmp_busi_inbill_site_wgt_rt_1.calc_weight_ccd AGGREGATION
+03 D class_area_code <- lbdb.tmp_busi_inbill_site_wgt_rt_1.class_area_code IDENTITY
+03 D parent_site_code <- lbdb.dm_pb_bizop_org_brnch.fith_lvl_org_brnch_cd IDENTITY
+03 D parent_site_code <- lbdb.dm_pb_bizop_org_brnch.fst_lvl_org_brnch_cd IDENTITY
+03 D parent_site_code <- lbdb.dm_pb_bizop_org_brnch.sxth_lvl_org_brnch_cd EXPRESSION
+03 D parent_site_code <- lbdb.dm_pb_bizop_org_brnch.thrd_lvl_org_brnch_cd EXPRESSION
+03 D parent_site_code <- lbdb.tmp_busi_inbill_site_wgt_rt_1.parent_site_code IDENTITY
+03 D stats_date <- lbdb.tmp_busi_inbill_site_wgt_rt_1.stats_date IDENTITY
+03 D stats_date_bgn_tm <- lbdb.tmp_busi_inbill_site_wgt_rt_1.stats_date_bgn_tm IDENTITY
+03 D stats_date_end_tm <- lbdb.tmp_busi_inbill_site_wgt_rt_1.stats_date_end_tm IDENTITY
+03 D stats_hour <- lbdb.tmp_busi_inbill_site_wgt_rt_1.stats_hour IDENTITY
+03 D stats_min <- lbdb.tmp_busi_inbill_site_wgt_rt_1.stats_min IDENTITY
+03 D stats_site_code <- lbdb.dm_pb_bizop_org_brnch.fith_lvl_org_brnch_cd IDENTITY
+03 D stats_site_code <- lbdb.dm_pb_bizop_org_brnch.fst_lvl_org_brnch_cd IDENTITY
+03 D stats_site_code <- lbdb.dm_pb_bizop_org_brnch.sxth_lvl_org_brnch_cd EXPRESSION
+03 D stats_site_code <- lbdb.dm_pb_bizop_org_brnch.thrd_lvl_org_brnch_cd EXPRESSION
+03 D stats_site_code <- lbdb.tmp_busi_inbill_site_wgt_rt_1.parent_site_code IDENTITY
+03 D stats_site_code <- lbdb.tmp_busi_inbill_site_wgt_rt_1.stats_site_code IDENTITY
+03 D stats_site_lvl <- lbdb.tmp_busi_inbill_site_wgt_rt_1.stats_site_lvl IDENTITY
+03 D stats_site_name <- lbdb.tmp_busi_inbill_site_wgt_rt_1.stats_site_name IDENTITY
+03 D stats_site_name <- lbdb.tx_bd_site_info.site_name IDENTITY
+03 D target_val <- lbdb.tmp_busi_inbill_site_wgt_rt_1.target_val IDENTITY
+03 D total_ticket_ccd <- lbdb.tmp_busi_inbill_site_wgt_rt_1.total_ticket_ccd AGGREGATION
+03 D total_workday_cnt_cur_mon <- lbdb.tmp_busi_inbill_site_wgt_rt_1.total_workday_cnt_cur_mon IDENTITY
+03 D weight_group <- lbdb.tmp_busi_inbill_site_wgt_rt_1.weight_group IDENTITY
+03 D weight_type <- lbdb.tmp_busi_inbill_site_wgt_rt_1.weight_type IDENTITY
+03 D workday_cnt_ccm <- lbdb.tmp_busi_inbill_site_wgt_rt_1.workday_cnt_ccm IDENTITY
+03 I lbdb.dm_pb_bizop_org_brnch.fith_lvl_org_brnch_cd x17
+03 I lbdb.dm_pb_bizop_org_brnch.fst_lvl_org_brnch_cd x17
+03 I lbdb.dm_pb_bizop_org_brnch.org_brnch_lvl x17
+03 I lbdb.dm_pb_bizop_org_brnch.svth_lvl_org_brnch_cd x17
+03 I lbdb.dm_pb_bizop_org_brnch.sxth_lvl_org_brnch_cd x17
+03 I lbdb.dm_pb_bizop_org_brnch.thrd_lvl_org_brnch_cd x17
+03 I lbdb.tmp_busi_inbill_site_wgt_rt_1.class_area_code x17
+03 I lbdb.tmp_busi_inbill_site_wgt_rt_1.parent_site_code x17
+03 I lbdb.tmp_busi_inbill_site_wgt_rt_1.stats_date x17
+03 I lbdb.tmp_busi_inbill_site_wgt_rt_1.stats_date_bgn_tm x17
+03 I lbdb.tmp_busi_inbill_site_wgt_rt_1.stats_date_end_tm x17
+03 I lbdb.tmp_busi_inbill_site_wgt_rt_1.stats_hour x17
+03 I lbdb.tmp_busi_inbill_site_wgt_rt_1.stats_min x17
+03 I lbdb.tmp_busi_inbill_site_wgt_rt_1.stats_site_code x17
+03 I lbdb.tmp_busi_inbill_site_wgt_rt_1.stats_site_lvl x17
+03 I lbdb.tmp_busi_inbill_site_wgt_rt_1.stats_site_name x17
+03 I lbdb.tmp_busi_inbill_site_wgt_rt_1.target_val x17
+03 I lbdb.tmp_busi_inbill_site_wgt_rt_1.total_workday_cnt_cur_mon x17
+03 I lbdb.tmp_busi_inbill_site_wgt_rt_1.weight_group x17
+03 I lbdb.tmp_busi_inbill_site_wgt_rt_1.weight_type x17
+03 I lbdb.tmp_busi_inbill_site_wgt_rt_1.workday_cnt_ccm x17
+03 I lbdb.tx_bd_site_info.site_code x17
+03 I lbdb.tx_bd_site_info.site_name x17
+03 N edges=418 direct=27
+04 T lbdb.dws_oper_org_violation_i_h
+04 T lbdb.ods_tx_tx_oper_alert_message
+04 T lbdb.tx_bd_site_info
+04 D alert_type <- lbdb.dws_oper_org_violation_i_h.alert_type IDENTITY
+04 D alert_type <- lbdb.ods_tx_tx_oper_alert_message.alert_type EXPRESSION
+04 D alert_type_name <- lbdb.dws_oper_org_violation_i_h.alert_type_name IDENTITY
+04 D alert_type_name <- lbdb.ods_tx_tx_oper_alert_message.alert_type EXPRESSION
+04 D alert_type_name <- lbdb.ods_tx_tx_oper_alert_message.alert_type_name EXPRESSION
+04 D etl_time <- <constant> CONSTANT
+04 D org_brnch_code <- lbdb.dws_oper_org_violation_i_h.org_brnch_code IDENTITY
+04 D org_brnch_code <- lbdb.ods_tx_tx_oper_alert_message.site_code IDENTITY
+04 D org_brnch_code <- lbdb.tx_bd_site_info.province_area_code IDENTITY
+04 D org_brnch_lvl <- <constant> CONSTANT
+04 D org_brnch_name <- lbdb.tx_bd_site_info.province_area_name IDENTITY
+04 D org_brnch_name <- lbdb.tx_bd_site_info.site_name IDENTITY
+04 D parent_site_code <- lbdb.tx_bd_site_info.province_area_code IDENTITY
+04 D parent_site_name <- lbdb.tx_bd_site_info.province_area_name IDENTITY
+04 D stats_date <- <constant> CONSTANT
+04 D stats_hour <- <constant> CONSTANT
+04 D violation_count <- lbdb.ods_tx_tx_oper_alert_message.id AGGREGATION
+04 D violation_count_ccm <- lbdb.dws_oper_org_violation_i_h.violation_count AGGREGATION
+04 D violation_count_ccm <- lbdb.ods_tx_tx_oper_alert_message.id AGGREGATION
+04 I lbdb.dws_oper_org_violation_i_h.alert_type x12
+04 I lbdb.dws_oper_org_violation_i_h.alert_type_name x12
+04 I lbdb.dws_oper_org_violation_i_h.org_brnch_code x12
+04 I lbdb.dws_oper_org_violation_i_h.org_brnch_lvl x12
+04 I lbdb.dws_oper_org_violation_i_h.stats_date x12
+04 I lbdb.dws_oper_org_violation_i_h.stats_hour x12
+04 I lbdb.ods_tx_tx_oper_alert_message.alert_time x12
+04 I lbdb.ods_tx_tx_oper_alert_message.alert_type x12
+04 I lbdb.ods_tx_tx_oper_alert_message.alert_type_name x12
+04 I lbdb.ods_tx_tx_oper_alert_message.data_valid x12
+04 I lbdb.ods_tx_tx_oper_alert_message.is_cdc_delete x12
+04 I lbdb.ods_tx_tx_oper_alert_message.site_code x12
+04 I lbdb.tx_bd_site_info.province_area_code x12
+04 I lbdb.tx_bd_site_info.province_area_name x12
+04 I lbdb.tx_bd_site_info.site_code x12
+04 N edges=199 direct=19
+05 T lbdb.dws_oper_operator_violation_i_h
+05 T lbdb.ods_tx_tx_oper_alert_message
+05 T lbdb.ods_tx_tx_oper_alert_operator
+05 T lbdb.tx_bd_site_info
+05 D alert_type <- lbdb.dws_oper_operator_violation_i_h.alert_type IDENTITY
+05 D alert_type <- lbdb.ods_tx_tx_oper_alert_message.alert_type EXPRESSION
+05 D alert_type_name <- lbdb.dws_oper_operator_violation_i_h.alert_type_name IDENTITY
+05 D alert_type_name <- lbdb.ods_tx_tx_oper_alert_message.alert_type EXPRESSION
+05 D alert_type_name <- lbdb.ods_tx_tx_oper_alert_message.alert_type_name EXPRESSION
+05 D etl_time <- <constant> CONSTANT
+05 D operator_code <- lbdb.dws_oper_operator_violation_i_h.operator_code IDENTITY
+05 D operator_code <- lbdb.ods_tx_tx_oper_alert_operator.operator_code IDENTITY
+05 D operator_name <- lbdb.dws_oper_operator_violation_i_h.operator_name IDENTITY
+05 D operator_name <- lbdb.ods_tx_tx_oper_alert_operator.operator_name IDENTITY
+05 D operator_site_code <- lbdb.dws_oper_operator_violation_i_h.operator_site_code AGGREGATION
+05 D operator_site_code <- lbdb.ods_tx_tx_oper_alert_message.site_code AGGREGATION
+05 D operator_site_name <- lbdb.dws_oper_operator_violation_i_h.operator_site_name AGGREGATION
+05 D operator_site_name <- lbdb.tx_bd_site_info.site_name AGGREGATION
+05 D stats_date <- <constant> CONSTANT
+05 D stats_hour <- <constant> CONSTANT
+05 D violation_count <- <constant> CONSTANT
+05 D violation_count_ccm <- lbdb.dws_oper_operator_violation_i_h.violation_count AGGREGATION
+05 I lbdb.dws_oper_operator_violation_i_h.alert_type x11
+05 I lbdb.dws_oper_operator_violation_i_h.alert_type_name x11
+05 I lbdb.dws_oper_operator_violation_i_h.operator_code x11
+05 I lbdb.dws_oper_operator_violation_i_h.operator_name x11
+05 I lbdb.dws_oper_operator_violation_i_h.operator_site_code x11
+05 I lbdb.dws_oper_operator_violation_i_h.operator_site_name x11
+05 I lbdb.dws_oper_operator_violation_i_h.stats_date x11
+05 I lbdb.dws_oper_operator_violation_i_h.stats_hour x11
+05 I lbdb.ods_tx_tx_oper_alert_message.alert_time x11
+05 I lbdb.ods_tx_tx_oper_alert_message.alert_type x11
+05 I lbdb.ods_tx_tx_oper_alert_message.alert_type_name x11
+05 I lbdb.ods_tx_tx_oper_alert_message.data_valid x11
+05 I lbdb.ods_tx_tx_oper_alert_message.id x11
+05 I lbdb.ods_tx_tx_oper_alert_message.is_cdc_delete x11
+05 I lbdb.ods_tx_tx_oper_alert_message.site_code x11
+05 I lbdb.ods_tx_tx_oper_alert_operator.create_time x11
+05 I lbdb.ods_tx_tx_oper_alert_operator.data_valid x11
+05 I lbdb.ods_tx_tx_oper_alert_operator.is_cdc_delete x11
+05 I lbdb.ods_tx_tx_oper_alert_operator.message_id x11
+05 I lbdb.ods_tx_tx_oper_alert_operator.operator_code x11
+05 I lbdb.ods_tx_tx_oper_alert_operator.operator_name x11
+05 I lbdb.tx_bd_site_info.site_code x11
+05 I lbdb.tx_bd_site_info.site_name x11
+05 N edges=271 direct=18
+06 T lbdb.dim_site_clock_maintain_s_d
+06 T lbdb.dwd_oper_sign_timeout_detail_rt
+06 T lbdb.dws_oper_eff_sign_rate
+06 T lbdb.dws_oper_first_site_sign_distance_rt
+06 T lbdb.ods_tx_tx_site_should_sign_detail
+06 T lbdb.tx_basic_dict_entry
+06 T lbdb.tx_bd_site_info
+06 T lbdb.tx_site_delivery_distance
+06 D dest_area_code <- lbdb.dwd_oper_sign_timeout_detail_rt.dest_area_code IDENTITY
+06 D dest_area_code <- lbdb.tx_bd_site_info.area_code IDENTITY
+06 D dest_area_name <- lbdb.dwd_oper_sign_timeout_detail_rt.dest_area_name IDENTITY
+06 D dest_area_name <- lbdb.tx_bd_site_info.area_name IDENTITY
+06 D dest_center_code <- lbdb.dwd_oper_sign_timeout_detail_rt.dest_center_code IDENTITY
+06 D dest_center_code <- lbdb.tx_bd_site_info.center_code IDENTITY
+06 D dest_center_name <- lbdb.dwd_oper_sign_timeout_detail_rt.dest_center_name IDENTITY
+06 D dest_center_name <- lbdb.tx_bd_site_info.center_name IDENTITY
+06 D dest_first_site_code <- lbdb.dwd_oper_sign_timeout_detail_rt.dest_first_site_code IDENTITY
+06 D dest_first_site_code <- lbdb.tx_bd_site_info.first_site_code IDENTITY
+06 D dest_first_site_name <- lbdb.dwd_oper_sign_timeout_detail_rt.dest_first_site_name IDENTITY
+06 D dest_first_site_name <- lbdb.tx_bd_site_info.site_name IDENTITY
+06 D dest_province_area_code <- lbdb.dwd_oper_sign_timeout_detail_rt.dest_province_area_code IDENTITY
+06 D dest_province_area_code <- lbdb.tx_bd_site_info.province_area_code IDENTITY
+06 D dest_province_area_name <- lbdb.dwd_oper_sign_timeout_detail_rt.dest_province_area_name IDENTITY
+06 D dest_province_area_name <- lbdb.tx_bd_site_info.province_area_name IDENTITY
+06 D distance <- lbdb.tx_site_delivery_distance.distance AGGREGATION
+06 D kilometer_range <- lbdb.tx_site_delivery_distance.distance AGGREGATION
+06 D should_ticket_ccd <- lbdb.ods_tx_tx_site_should_sign_detail.validity_lasted_sign_time AGGREGATION
+06 D should_ticket_ccd <- lbdb.ods_tx_tx_site_should_sign_detail.wait_notice_release_type AGGREGATION
+06 D should_ticket_ccd <- lbdb.tx_basic_dict_entry.dict_name AGGREGATION
+06 D should_ticket_ccm <- lbdb.dws_oper_eff_sign_rate.should_sign_cnt AGGREGATION
+06 D sign_timeout_ticket <- <constant> CONSTANT
+06 D sign_timeout_ticket_3d <- lbdb.dwd_oper_sign_timeout_detail_rt.validity_lasted_sign_time AGGREGATION
+06 D signed_ticket_ccd <- lbdb.ods_tx_tx_site_should_sign_detail.sign_status AGGREGATION
+06 D signed_ticket_ccd <- lbdb.ods_tx_tx_site_should_sign_detail.validity_lasted_sign_time AGGREGATION
+06 D signed_ticket_ccd <- lbdb.ods_tx_tx_site_should_sign_detail.wait_notice_release_type AGGREGATION
+06 D signed_ticket_ccd <- lbdb.tx_basic_dict_entry.dict_name AGGREGATION
+06 D signed_ticket_ccm <- lbdb.dws_oper_eff_sign_rate.real_sign_cnt AGGREGATION
+06 D stats_time <- <constant> CONSTANT
+06 D unsigned_ticket_ccd <- lbdb.ods_tx_tx_site_should_sign_detail.sign_status AGGREGATION
+06 D unsigned_ticket_ccd <- lbdb.ods_tx_tx_site_should_sign_detail.validity_lasted_sign_time AGGREGATION
+06 D unsigned_ticket_ccd <- lbdb.ods_tx_tx_site_should_sign_detail.wait_notice_release_type AGGREGATION
+06 D unsigned_ticket_ccd <- lbdb.tx_basic_dict_entry.dict_name AGGREGATION
+06 I lbdb.dim_site_clock_maintain_s_d.clock_type x18
+06 I lbdb.dim_site_clock_maintain_s_d.data_valid x18
+06 I lbdb.dim_site_clock_maintain_s_d.dt x18
+06 I lbdb.dim_site_clock_maintain_s_d.must_clock_time x18
+06 I lbdb.dim_site_clock_maintain_s_d.scan_site_code x18
+06 I lbdb.dim_site_clock_maintain_s_d.site_code x18
+06 I lbdb.dwd_oper_sign_timeout_detail_rt.data_valid x18
+06 I lbdb.dwd_oper_sign_timeout_detail_rt.delivery_type_name x18
+06 I lbdb.dwd_oper_sign_timeout_detail_rt.dest_area_code x18
+06 I lbdb.dwd_oper_sign_timeout_detail_rt.dest_area_name x18
+06 I lbdb.dwd_oper_sign_timeout_detail_rt.dest_center_code x18
+06 I lbdb.dwd_oper_sign_timeout_detail_rt.dest_center_name x18
+06 I lbdb.dwd_oper_sign_timeout_detail_rt.dest_first_site_code x18
+06 I lbdb.dwd_oper_sign_timeout_detail_rt.dest_first_site_name x18
+06 I lbdb.dwd_oper_sign_timeout_detail_rt.dest_province_area_code x18
+06 I lbdb.dwd_oper_sign_timeout_detail_rt.dest_province_area_name x18
+06 I lbdb.dwd_oper_sign_timeout_detail_rt.is_cdc_delete x18
+06 I lbdb.dwd_oper_sign_timeout_detail_rt.sign_status x18
+06 I lbdb.dwd_oper_sign_timeout_detail_rt.stats_date x18
+06 I lbdb.dwd_oper_sign_timeout_detail_rt.validity_lasted_sign_time x18
+06 I lbdb.dwd_oper_sign_timeout_detail_rt.wait_notice_release_type x18
+06 I lbdb.dws_oper_eff_sign_rate.next_site_code x18
+06 I lbdb.dws_oper_eff_sign_rate.stats_date x18
+06 I lbdb.dws_oper_eff_sign_rate.time_efficient_name1 x18
+06 I lbdb.ods_tx_tx_site_should_sign_detail.data_valid x18
+06 I lbdb.ods_tx_tx_site_should_sign_detail.delivery_type_code x18
+06 I lbdb.ods_tx_tx_site_should_sign_detail.dest_site_code x18
+06 I lbdb.ods_tx_tx_site_should_sign_detail.is_cdc_delete x18
+06 I lbdb.ods_tx_tx_site_should_sign_detail.update_time x18
+06 I lbdb.ods_tx_tx_site_should_sign_detail.validity_lasted_sign_time x18
+06 I lbdb.ods_tx_tx_site_should_sign_detail.waybill_no x18
+06 I lbdb.tx_basic_dict_entry.dict_code x18
+06 I lbdb.tx_basic_dict_entry.type_code x18
+06 I lbdb.tx_bd_site_info.area_code x18
+06 I lbdb.tx_bd_site_info.area_name x18
+06 I lbdb.tx_bd_site_info.center_code x18
+06 I lbdb.tx_bd_site_info.center_name x18
+06 I lbdb.tx_bd_site_info.first_site_code x18
+06 I lbdb.tx_bd_site_info.province_area_code x18
+06 I lbdb.tx_bd_site_info.province_area_name x18
+06 I lbdb.tx_bd_site_info.site_code x18
+06 I lbdb.tx_bd_site_info.site_name x18
+06 I lbdb.tx_site_delivery_distance.center_code x18
+06 I lbdb.tx_site_delivery_distance.create_time x18
+06 I lbdb.tx_site_delivery_distance.distance x18
+06 I lbdb.tx_site_delivery_distance.site_code x18
+06 N edges=862 direct=34
+07 T lbdb.dwd_oper_sign_timeout_detail_rt
+07 T lbdb.dws_oper_eff_sign_rate
+07 T lbdb.dws_oper_sign_first_site_distance_rt
+07 T lbdb.ods_tx_tx_site_should_sign_detail
+07 T lbdb.tx_basic_dict_entry
+07 T lbdb.tx_bd_site_info
+07 T lbdb.tx_site_delivery_distance
+07 D dest_area_code <- lbdb.dwd_oper_sign_timeout_detail_rt.dest_area_code IDENTITY
+07 D dest_area_code <- lbdb.tx_bd_site_info.area_code IDENTITY
+07 D dest_area_name <- lbdb.dwd_oper_sign_timeout_detail_rt.dest_area_name IDENTITY
+07 D dest_area_name <- lbdb.tx_bd_site_info.area_name IDENTITY
+07 D dest_first_site_code <- lbdb.dwd_oper_sign_timeout_detail_rt.dest_first_site_code IDENTITY
+07 D dest_first_site_code <- lbdb.tx_bd_site_info.first_site_code IDENTITY
+07 D dest_first_site_name <- lbdb.dwd_oper_sign_timeout_detail_rt.dest_first_site_name IDENTITY
+07 D dest_first_site_name <- lbdb.tx_bd_site_info.site_name IDENTITY
+07 D dest_province_area_code <- lbdb.dwd_oper_sign_timeout_detail_rt.dest_province_area_code IDENTITY
+07 D dest_province_area_code <- lbdb.tx_bd_site_info.province_area_code IDENTITY
+07 D dest_province_area_name <- lbdb.dwd_oper_sign_timeout_detail_rt.dest_province_area_name IDENTITY
+07 D dest_province_area_name <- lbdb.tx_bd_site_info.province_area_name IDENTITY
+07 D distance <- lbdb.dws_oper_eff_sign_rate.site_to_center_distance_range IDENTITY
+07 D distance <- lbdb.tx_site_delivery_distance.distance EXPRESSION
+07 D should_ticket_ccd <- lbdb.ods_tx_tx_site_should_sign_detail.validity_lasted_sign_time AGGREGATION
+07 D should_ticket_ccd <- lbdb.ods_tx_tx_site_should_sign_detail.wait_notice_release_type AGGREGATION
+07 D should_ticket_ccd <- lbdb.tx_basic_dict_entry.dict_name AGGREGATION
+07 D should_ticket_ccm <- lbdb.dws_oper_eff_sign_rate.should_sign_cnt AGGREGATION
+07 D sign_timeout_ticket <- <constant> CONSTANT
+07 D sign_timeout_ticket_3d <- lbdb.dwd_oper_sign_timeout_detail_rt.validity_lasted_sign_time AGGREGATION
+07 D signed_ticket_ccd <- lbdb.ods_tx_tx_site_should_sign_detail.sign_status AGGREGATION
+07 D signed_ticket_ccd <- lbdb.ods_tx_tx_site_should_sign_detail.validity_lasted_sign_time AGGREGATION
+07 D signed_ticket_ccd <- lbdb.ods_tx_tx_site_should_sign_detail.wait_notice_release_type AGGREGATION
+07 D signed_ticket_ccd <- lbdb.tx_basic_dict_entry.dict_name AGGREGATION
+07 D signed_ticket_ccm <- lbdb.dws_oper_eff_sign_rate.real_sign_cnt AGGREGATION
+07 D stats_time <- <constant> CONSTANT
+07 D unsigned_ticket_ccd <- lbdb.ods_tx_tx_site_should_sign_detail.sign_status AGGREGATION
+07 D unsigned_ticket_ccd <- lbdb.ods_tx_tx_site_should_sign_detail.validity_lasted_sign_time AGGREGATION
+07 D unsigned_ticket_ccd <- lbdb.ods_tx_tx_site_should_sign_detail.wait_notice_release_type AGGREGATION
+07 D unsigned_ticket_ccd <- lbdb.tx_basic_dict_entry.dict_name AGGREGATION
+07 I lbdb.dwd_oper_sign_timeout_detail_rt.data_valid x15
+07 I lbdb.dwd_oper_sign_timeout_detail_rt.delivery_type_name x15
+07 I lbdb.dwd_oper_sign_timeout_detail_rt.dest_area_code x15
+07 I lbdb.dwd_oper_sign_timeout_detail_rt.dest_area_name x15
+07 I lbdb.dwd_oper_sign_timeout_detail_rt.dest_center_code x15
+07 I lbdb.dwd_oper_sign_timeout_detail_rt.dest_center_name x15
+07 I lbdb.dwd_oper_sign_timeout_detail_rt.dest_first_site_code x15
+07 I lbdb.dwd_oper_sign_timeout_detail_rt.dest_first_site_name x15
+07 I lbdb.dwd_oper_sign_timeout_detail_rt.dest_province_area_code x15
+07 I lbdb.dwd_oper_sign_timeout_detail_rt.dest_province_area_name x15
+07 I lbdb.dwd_oper_sign_timeout_detail_rt.is_cdc_delete x15
+07 I lbdb.dwd_oper_sign_timeout_detail_rt.should_sign_site_code x15
+07 I lbdb.dwd_oper_sign_timeout_detail_rt.sign_status x15
+07 I lbdb.dwd_oper_sign_timeout_detail_rt.stats_date x15
+07 I lbdb.dwd_oper_sign_timeout_detail_rt.validity_lasted_sign_time x15
+07 I lbdb.dwd_oper_sign_timeout_detail_rt.wait_notice_release_type x15
+07 I lbdb.dws_oper_eff_sign_rate.next_site_code x15
+07 I lbdb.dws_oper_eff_sign_rate.site_to_center_distance_range x15
+07 I lbdb.dws_oper_eff_sign_rate.stats_date x15
+07 I lbdb.dws_oper_eff_sign_rate.time_efficient_name1 x15
+07 I lbdb.ods_tx_tx_site_should_sign_detail.data_valid x15
+07 I lbdb.ods_tx_tx_site_should_sign_detail.delivery_type_code x15
+07 I lbdb.ods_tx_tx_site_should_sign_detail.dest_site_code x15
+07 I lbdb.ods_tx_tx_site_should_sign_detail.is_cdc_delete x15
+07 I lbdb.ods_tx_tx_site_should_sign_detail.should_sign_site_code x15
+07 I lbdb.ods_tx_tx_site_should_sign_detail.update_time x15
+07 I lbdb.ods_tx_tx_site_should_sign_detail.validity_lasted_sign_time x15
+07 I lbdb.ods_tx_tx_site_should_sign_detail.waybill_dest_center_code x15
+07 I lbdb.ods_tx_tx_site_should_sign_detail.waybill_no x15
+07 I lbdb.tx_basic_dict_entry.dict_code x15
+07 I lbdb.tx_basic_dict_entry.type_code x15
+07 I lbdb.tx_bd_site_info.area_code x15
+07 I lbdb.tx_bd_site_info.area_name x15
+07 I lbdb.tx_bd_site_info.center_code x15
+07 I lbdb.tx_bd_site_info.center_name x15
+07 I lbdb.tx_bd_site_info.first_site_code x15
+07 I lbdb.tx_bd_site_info.province_area_code x15
+07 I lbdb.tx_bd_site_info.province_area_name x15
+07 I lbdb.tx_bd_site_info.site_code x15
+07 I lbdb.tx_bd_site_info.site_name x15
+07 I lbdb.tx_site_delivery_distance.center_code x15
+07 I lbdb.tx_site_delivery_distance.create_time x15
+07 I lbdb.tx_site_delivery_distance.distance x15
+07 I lbdb.tx_site_delivery_distance.site_code x15
+07 N edges=690 direct=30
+08 T lbdb.dwd_oper_sign_timeout_detail_rt
+08 T lbdb.ods_tx_tx_site_should_sign_detail
+08 T lbdb.tx_basic_dict_entry
+08 T lbdb.tx_bd_site_info
+08 D arrival_scan_time <- lbdb.ods_tx_tx_site_should_sign_detail.reach_scan_time IDENTITY
+08 D calc_weight <- lbdb.ods_tx_tx_site_should_sign_detail.calc_weight IDENTITY
+08 D data_valid <- lbdb.ods_tx_tx_site_should_sign_detail.data_valid IDENTITY
+08 D delivery_time <- lbdb.ods_tx_tx_site_should_sign_detail.delivery_time IDENTITY
+08 D delivery_type_code <- lbdb.ods_tx_tx_site_should_sign_detail.delivery_type_code IDENTITY
+08 D delivery_type_name <- lbdb.tx_basic_dict_entry.dict_name IDENTITY
+08 D dest_area_code <- lbdb.tx_bd_site_info.area_code IDENTITY
+08 D dest_area_name <- lbdb.tx_bd_site_info.area_name IDENTITY
+08 D dest_center_code <- lbdb.tx_bd_site_info.center_code IDENTITY
+08 D dest_center_name <- lbdb.tx_bd_site_info.center_name IDENTITY
+08 D dest_first_site_code <- lbdb.tx_bd_site_info.first_site_code IDENTITY
+08 D dest_first_site_name <- lbdb.tx_bd_site_info.site_name IDENTITY
+08 D dest_modify_time <- lbdb.ods_tx_tx_site_should_sign_detail.dest_modify_time IDENTITY
+08 D dest_province_area_code <- lbdb.tx_bd_site_info.province_area_code IDENTITY
+08 D dest_province_area_name <- lbdb.tx_bd_site_info.province_area_name IDENTITY
+08 D dest_site_code <- lbdb.ods_tx_tx_site_should_sign_detail.dest_site_code IDENTITY
+08 D dest_site_name <- lbdb.tx_bd_site_info.site_name IDENTITY
+08 D etl_time <- <constant> CONSTANT
+08 D in_warehouse_date <- lbdb.ods_tx_tx_site_should_sign_detail.in_warehouse_date IDENTITY
+08 D in_warehouse_type <- lbdb.ods_tx_tx_site_should_sign_detail.in_warehouse_type IDENTITY
+08 D is_cdc_delete <- lbdb.ods_tx_tx_site_should_sign_detail.is_cdc_delete IDENTITY
+08 D load_scan_time <- lbdb.ods_tx_tx_site_should_sign_detail.load_scan_time IDENTITY
+08 D out_confirm_time <- lbdb.ods_tx_tx_site_should_sign_detail.out_confirm_time IDENTITY
+08 D parcel_count <- lbdb.ods_tx_tx_site_should_sign_detail.total_piece IDENTITY
+08 D receive_city_code <- lbdb.ods_tx_tx_site_should_sign_detail.receive_city_code IDENTITY
+08 D receive_city_name <- lbdb.ods_tx_tx_site_should_sign_detail.receive_city_name IDENTITY
+08 D receive_province_code <- lbdb.ods_tx_tx_site_should_sign_detail.receive_province_code IDENTITY
+08 D receive_province_name <- lbdb.ods_tx_tx_site_should_sign_detail.receive_province_name IDENTITY
+08 D receiver_county_code <- lbdb.ods_tx_tx_site_should_sign_detail.receive_district_code IDENTITY
+08 D receiver_county_name <- lbdb.ods_tx_tx_site_should_sign_detail.receive_district_name IDENTITY
+08 D receiver_town_code <- lbdb.ods_tx_tx_site_should_sign_detail.receive_street_code IDENTITY
+08 D receiver_town_name <- lbdb.ods_tx_tx_site_should_sign_detail.receive_street IDENTITY
+08 D send_center_code <- lbdb.dwd_oper_sign_timeout_detail_rt.send_center_code IDENTITY
+08 D send_center_name <- lbdb.dwd_oper_sign_timeout_detail_rt.send_center_name IDENTITY
+08 D send_first_site_code <- lbdb.dwd_oper_sign_timeout_detail_rt.send_first_site_code IDENTITY
+08 D send_first_site_name <- lbdb.dwd_oper_sign_timeout_detail_rt.send_first_site_name IDENTITY
+08 D send_site_code <- lbdb.dwd_oper_sign_timeout_detail_rt.send_site_code IDENTITY
+08 D send_site_name <- lbdb.dwd_oper_sign_timeout_detail_rt.send_site_name IDENTITY
+08 D should_leave_time <- lbdb.ods_tx_tx_site_should_sign_detail.should_leave_time IDENTITY
+08 D should_sign_site_code <- lbdb.ods_tx_tx_site_should_sign_detail.should_sign_site_code IDENTITY
+08 D should_sorting_time <- lbdb.ods_tx_tx_site_should_sign_detail.should_sorting_time IDENTITY
+08 D sign_status <- lbdb.ods_tx_tx_site_should_sign_detail.sign_status IDENTITY
+08 D sign_time <- lbdb.ods_tx_tx_site_should_sign_detail.sign_time IDENTITY
+08 D sign_timeout_time <- <constant> CONSTANT
+08 D sign_validity <- lbdb.ods_tx_tx_site_should_sign_detail.sign_validity IDENTITY
+08 D sort_scan_time <- lbdb.ods_tx_tx_site_should_sign_detail.sort_scan_time IDENTITY
+08 D stats_date <- lbdb.dwd_oper_sign_timeout_detail_rt.stats_date IDENTITY
+08 D unload_scan_time <- lbdb.ods_tx_tx_site_should_sign_detail.unload_scan_time IDENTITY
+08 D validity_lasted_sign_time <- lbdb.ods_tx_tx_site_should_sign_detail.validity_lasted_sign_time IDENTITY
+08 D wait_notice_release_type <- lbdb.ods_tx_tx_site_should_sign_detail.wait_notice_release_type IDENTITY
+08 D waybill_dest_center_code <- lbdb.dwd_oper_sign_timeout_detail_rt.waybill_dest_center_code IDENTITY
+08 D waybill_dest_center_name <- lbdb.dwd_oper_sign_timeout_detail_rt.waybill_dest_center_name IDENTITY
+08 D waybill_no <- lbdb.dwd_oper_sign_timeout_detail_rt.waybill_no IDENTITY
+08 I lbdb.dwd_oper_sign_timeout_detail_rt.stats_date x53
+08 I lbdb.dwd_oper_sign_timeout_detail_rt.waybill_no x53
+08 I lbdb.ods_tx_tx_site_should_sign_detail.delivery_type_code x53
+08 I lbdb.ods_tx_tx_site_should_sign_detail.dest_site_code x53
+08 I lbdb.ods_tx_tx_site_should_sign_detail.etl_time x53
+08 I lbdb.ods_tx_tx_site_should_sign_detail.update_time x53
+08 I lbdb.ods_tx_tx_site_should_sign_detail.validity_lasted_sign_time x53
+08 I lbdb.ods_tx_tx_site_should_sign_detail.waybill_no x53
+08 I lbdb.tx_basic_dict_entry.dict_code x53
+08 I lbdb.tx_basic_dict_entry.type_code x53
+08 I lbdb.tx_bd_site_info.first_site_code x53
+08 I lbdb.tx_bd_site_info.site_code x53
+08 N edges=689 direct=53
+09 T lbdb.dws_oper_center_retain_1d
+09 T lbdb.dws_oper_waybill_retain_1d
+09 D class_area <- lbdb.dws_oper_waybill_retain_1d.class_area IDENTITY
+09 D class_area_name <- lbdb.dws_oper_waybill_retain_1d.class_area_name IDENTITY
+09 D etl_time <- <constant> CONSTANT
+09 D instock_center_code <- lbdb.dws_oper_waybill_retain_1d.instock_center_code IDENTITY
+09 D instock_center_name <- lbdb.dws_oper_waybill_retain_1d.instock_center_name IDENTITY
+09 D instock_province_area_code <- lbdb.dws_oper_waybill_retain_1d.instock_province_area_code IDENTITY
+09 D instock_province_area_name <- lbdb.dws_oper_waybill_retain_1d.instock_province_area_name IDENTITY
+09 D kilometer_range <- lbdb.dws_oper_waybill_retain_1d.kilometer_range IDENTITY
+09 D loader_dept <- lbdb.dws_oper_waybill_retain_1d.loader_dept IDENTITY
+09 D loader_team <- lbdb.dws_oper_waybill_retain_1d.loader_team IDENTITY
+09 D next_province_area_code <- lbdb.dws_oper_waybill_retain_1d.next_province_area_code IDENTITY
+09 D next_province_area_name <- lbdb.dws_oper_waybill_retain_1d.next_province_area_name IDENTITY
+09 D next_site_code <- lbdb.dws_oper_waybill_retain_1d.next_site_code IDENTITY
+09 D next_site_name <- lbdb.dws_oper_waybill_retain_1d.next_site_name IDENTITY
+09 D retain_ticket <- <constant> CONSTANT
+09 D retain_time_slot <- lbdb.dws_oper_waybill_retain_1d.retain_time_slot IDENTITY
+09 D retain_weight <- lbdb.dws_oper_waybill_retain_1d.stock_calc_weight AGGREGATION
+09 D site_type_name <- lbdb.dws_oper_waybill_retain_1d.site_type_name IDENTITY
+09 D stats_time <- lbdb.dws_oper_waybill_retain_1d.stats_time IDENTITY
+09 D stock_node_type <- lbdb.dws_oper_waybill_retain_1d.stock_node_type IDENTITY
+09 D stock_status <- lbdb.dws_oper_waybill_retain_1d.stock_status IDENTITY
+09 I lbdb.dws_oper_waybill_retain_1d.class_area x21
+09 I lbdb.dws_oper_waybill_retain_1d.class_area_name x21
+09 I lbdb.dws_oper_waybill_retain_1d.instock_center_code x21
+09 I lbdb.dws_oper_waybill_retain_1d.instock_center_name x21
+09 I lbdb.dws_oper_waybill_retain_1d.instock_province_area_code x21
+09 I lbdb.dws_oper_waybill_retain_1d.instock_province_area_name x21
+09 I lbdb.dws_oper_waybill_retain_1d.kilometer_range x21
+09 I lbdb.dws_oper_waybill_retain_1d.loader_dept x21
+09 I lbdb.dws_oper_waybill_retain_1d.loader_team x21
+09 I lbdb.dws_oper_waybill_retain_1d.next_province_area_code x21
+09 I lbdb.dws_oper_waybill_retain_1d.next_province_area_name x21
+09 I lbdb.dws_oper_waybill_retain_1d.next_site_code x21
+09 I lbdb.dws_oper_waybill_retain_1d.next_site_name x21
+09 I lbdb.dws_oper_waybill_retain_1d.retain_time_slot x21
+09 I lbdb.dws_oper_waybill_retain_1d.site_type_name x21
+09 I lbdb.dws_oper_waybill_retain_1d.stats_time x21
+09 I lbdb.dws_oper_waybill_retain_1d.stock_node_type x21
+09 I lbdb.dws_oper_waybill_retain_1d.stock_status x21
+09 I lbdb.dws_oper_waybill_retain_1d.zone_type_name x21
+09 N edges=420 direct=21
+10 T lbdb.bd_bill_busi_detail
+10 T lbdb.dwd_busi_shuttle_bus_input_detail_f_d
+10 T lbdb.dws_busi_org_input_cost_i_d
+10 T lbdb.ods_eagle_t_dispatch_task_i_d
+10 T lbdb.tx_bd_site_info
+10 D cost_type <- <constant> CONSTANT
+10 D etl_time <- <constant> CONSTANT
+10 D month_cost_amount <- lbdb.bd_bill_busi_detail.amount AGGREGATION
+10 D month_cost_amount <- lbdb.bd_bill_busi_detail.transaction_type AGGREGATION
+10 D month_cost_amount <- lbdb.dwd_busi_shuttle_bus_input_detail_f_d.expiration_time AGGREGATION
+10 D month_cost_amount <- lbdb.dwd_busi_shuttle_bus_input_detail_f_d.launch_time AGGREGATION
+10 D month_cost_amount <- lbdb.ods_eagle_t_dispatch_task_i_d.first_departure_time AGGREGATION
+10 D month_cost_amount <- lbdb.ods_eagle_t_dispatch_task_i_d.plan_cost AGGREGATION
+10 D org_brnch_code <- lbdb.dwd_busi_shuttle_bus_input_detail_f_d.area_code IDENTITY
+10 D org_brnch_code <- lbdb.dwd_busi_shuttle_bus_input_detail_f_d.province_area_code IDENTITY
+10 D org_brnch_code <- lbdb.tx_bd_site_info.area_code IDENTITY
+10 D org_brnch_code <- lbdb.tx_bd_site_info.province_area_code IDENTITY
+10 D org_brnch_lvl <- <constant> CONSTANT
+10 D org_brnch_name <- lbdb.dwd_busi_shuttle_bus_input_detail_f_d.area_name IDENTITY
+10 D org_brnch_name <- lbdb.dwd_busi_shuttle_bus_input_detail_f_d.province_area_name IDENTITY
+10 D org_brnch_name <- lbdb.tx_bd_site_info.area_name IDENTITY
+10 D org_brnch_name <- lbdb.tx_bd_site_info.province_area_name IDENTITY
+10 D parent_site_code <- lbdb.dwd_busi_shuttle_bus_input_detail_f_d.province_area_code IDENTITY
+10 D parent_site_code <- lbdb.tx_bd_site_info.province_area_code IDENTITY
+10 D parent_site_name <- lbdb.dwd_busi_shuttle_bus_input_detail_f_d.province_area_name IDENTITY
+10 D parent_site_name <- lbdb.tx_bd_site_info.province_area_name IDENTITY
+10 D stats_date <- <constant> CONSTANT
+10 I lbdb.bd_bill_busi_detail.charge_itme_id x9
+10 I lbdb.bd_bill_busi_detail.send_time x9
+10 I lbdb.bd_bill_busi_detail.site_code x9
+10 I lbdb.bd_bill_busi_detail.site_name x9
+10 I lbdb.dwd_busi_shuttle_bus_input_detail_f_d.area_code x9
+10 I lbdb.dwd_busi_shuttle_bus_input_detail_f_d.area_name x9
+10 I lbdb.dwd_busi_shuttle_bus_input_detail_f_d.expiration_time x9
+10 I lbdb.dwd_busi_shuttle_bus_input_detail_f_d.launch_time x9
+10 I lbdb.dwd_busi_shuttle_bus_input_detail_f_d.province_area_code x9
+10 I lbdb.dwd_busi_shuttle_bus_input_detail_f_d.province_area_name x9
+10 I lbdb.dwd_busi_shuttle_bus_input_detail_f_d.schedule_name x9
+10 I lbdb.dwd_busi_shuttle_bus_input_detail_f_d.site_type_code x9
+10 I lbdb.dwd_busi_shuttle_bus_input_detail_f_d.stats_date x9
+10 I lbdb.ods_eagle_t_dispatch_task_i_d.actual_dest_arrive_time x9
+10 I lbdb.ods_eagle_t_dispatch_task_i_d.create_time x9
+10 I lbdb.ods_eagle_t_dispatch_task_i_d.data_valid x9
+10 I lbdb.ods_eagle_t_dispatch_task_i_d.plan_schedule_name x9
+10 I lbdb.ods_eagle_t_dispatch_task_i_d.task_status x9
+10 I lbdb.tx_bd_site_info.area_code x9
+10 I lbdb.tx_bd_site_info.area_name x9
+10 I lbdb.tx_bd_site_info.province_area_code x9
+10 I lbdb.tx_bd_site_info.province_area_name x9
+10 I lbdb.tx_bd_site_info.site_code x9
+10 N edges=229 direct=22
+11 T lbdb.ads_surch_policy_sign_site_review_1d
+11 T lbdb.dim_tx_site_info_d
+11 T lbdb.dwd_fin_wayb_sign_site_income_cost_i_m
+11 T lbdb.dws_oper_eff_sign_rate
+11 T lbdb.tx_basic_dict_entry
+11 D area_code <- lbdb.dim_tx_site_info_d.area_code AGGREGATION
+11 D area_name <- lbdb.dim_tx_site_info_d.area_name AGGREGATION
+11 D calc_weight_0_between_300 <- lbdb.dwd_fin_wayb_sign_site_income_cost_i_m.calc_weight AGGREGATION
+11 D city_name <- lbdb.dim_tx_site_info_d.city_name AGGREGATION
+11 D day_sign_cnt <- lbdb.dws_oper_eff_sign_rate.day_sign_cnt AGGREGATION
+11 D derive_first_site_name <- lbdb.dwd_fin_wayb_sign_site_income_cost_i_m.first_site_name AGGREGATION
+11 D etl_time <- <constant> CONSTANT
+11 D first_site_code <- lbdb.dwd_fin_wayb_sign_site_income_cost_i_m.first_site_code IDENTITY
+11 D first_site_name <- lbdb.dwd_fin_wayb_sign_site_income_cost_i_m.first_site_name EXPRESSION
+11 D first_site_name <- lbdb.dwd_fin_wayb_sign_site_income_cost_i_m.sign_site_name EXPRESSION
+11 D province_area_code <- lbdb.dim_tx_site_info_d.province_area_code AGGREGATION
+11 D province_area_name <- lbdb.dim_tx_site_info_d.province_area_name AGGREGATION
+11 D receipt_rate <- lbdb.dws_oper_eff_sign_rate.day_sign_cnt AGGREGATION
+11 D receipt_rate <- lbdb.dws_oper_eff_sign_rate.should_sign_cnt AGGREGATION
+11 D should_sign_cnt <- lbdb.dws_oper_eff_sign_rate.should_sign_cnt AGGREGATION
+11 D site_to_center_distance <- lbdb.dim_tx_site_info_d.site_to_center_distance AGGREGATION
+11 D source <- lbdb.dwd_fin_wayb_sign_site_income_cost_i_m.send_site_name EXPRESSION
+11 D source <- lbdb.tx_basic_dict_entry.dict_name EXPRESSION
+11 D stats_date <- lbdb.dwd_fin_wayb_sign_site_income_cost_i_m.sign_date IDENTITY
+11 D zero_surch_policy_calc_weight <- lbdb.dwd_fin_wayb_sign_site_income_cost_i_m.calc_weight AGGREGATION
+11 D zero_surch_policy_calc_weight <- lbdb.dwd_fin_wayb_sign_site_income_cost_i_m.fee_1412 AGGREGATION
+11 D zero_surch_policy_calc_weight <- lbdb.dwd_fin_wayb_sign_site_income_cost_i_m.varchar_standby_2 AGGREGATION
+11 D zero_surch_policy_cost <- lbdb.dwd_fin_wayb_sign_site_income_cost_i_m.calc_weight AGGREGATION
+11 D zero_surch_policy_cost <- lbdb.dwd_fin_wayb_sign_site_income_cost_i_m.fee_1412 AGGREGATION
+11 D zero_surch_policy_cost <- lbdb.dwd_fin_wayb_sign_site_income_cost_i_m.varchar_standby_2 AGGREGATION
+11 D zero_surch_policy_ticket <- lbdb.dwd_fin_wayb_sign_site_income_cost_i_m.calc_weight AGGREGATION
+11 D zero_surch_policy_ticket <- lbdb.dwd_fin_wayb_sign_site_income_cost_i_m.fee_1412 AGGREGATION
+11 D zero_surch_policy_ticket <- lbdb.dwd_fin_wayb_sign_site_income_cost_i_m.varchar_standby_2 AGGREGATION
+11 D zero_surch_policy_ticket <- lbdb.dwd_fin_wayb_sign_site_income_cost_i_m.waybill_no AGGREGATION
+11 I lbdb.dim_tx_site_info_d.site_code x19
+11 I lbdb.dim_tx_site_info_d.stats_date x19
+11 I lbdb.dwd_fin_wayb_sign_site_income_cost_i_m.ec_id x19
+11 I lbdb.dwd_fin_wayb_sign_site_income_cost_i_m.first_site_code x19
+11 I lbdb.dwd_fin_wayb_sign_site_income_cost_i_m.first_site_name x19
+11 I lbdb.dwd_fin_wayb_sign_site_income_cost_i_m.send_site_name x19
+11 I lbdb.dwd_fin_wayb_sign_site_income_cost_i_m.sign_date x19
+11 I lbdb.dwd_fin_wayb_sign_site_income_cost_i_m.sign_site_name x19
+11 I lbdb.dwd_fin_wayb_sign_site_income_cost_i_m.stats_date x19
+11 I lbdb.dws_oper_eff_sign_rate.next_first_site_code x19
+11 I lbdb.dws_oper_eff_sign_rate.stats_date x19
+11 I lbdb.tx_basic_dict_entry.data_status x19
+11 I lbdb.tx_basic_dict_entry.dict_code x19
+11 I lbdb.tx_basic_dict_entry.dict_name x19
+11 I lbdb.tx_basic_dict_entry.type_code x19
+11 N edges=314 direct=29
+12 T lbdb.dwd_busi_shuttle_bus_input_detail_f_d
+12 T lbdb.dws_busi_org_shuttle_bus_input_i_d
+12 D car_type <- lbdb.dwd_busi_shuttle_bus_input_detail_f_d.car_type IDENTITY
+12 D etl_time <- <constant> CONSTANT
+12 D input_cnt <- lbdb.dwd_busi_shuttle_bus_input_detail_f_d.expiration_time AGGREGATION
+12 D input_cnt <- lbdb.dwd_busi_shuttle_bus_input_detail_f_d.input_cnt AGGREGATION
+12 D input_cnt <- lbdb.dwd_busi_shuttle_bus_input_detail_f_d.input_type AGGREGATION
+12 D input_cnt <- lbdb.dwd_busi_shuttle_bus_input_detail_f_d.site_code AGGREGATION
+12 D input_type <- lbdb.dwd_busi_shuttle_bus_input_detail_f_d.input_type IDENTITY
+12 D month_cancel_input_cnt <- lbdb.dwd_busi_shuttle_bus_input_detail_f_d.expiration_time AGGREGATION
+12 D month_cancel_input_cnt <- lbdb.dwd_busi_shuttle_bus_input_detail_f_d.input_cnt AGGREGATION
+12 D month_cancel_input_cnt <- lbdb.dwd_busi_shuttle_bus_input_detail_f_d.input_type AGGREGATION
+12 D month_cancel_input_cnt <- lbdb.dwd_busi_shuttle_bus_input_detail_f_d.site_code AGGREGATION
+12 D month_new_input_cnt <- lbdb.dwd_busi_shuttle_bus_input_detail_f_d.input_cnt AGGREGATION
+12 D month_new_input_cnt <- lbdb.dwd_busi_shuttle_bus_input_detail_f_d.input_type AGGREGATION
+12 D month_new_input_cnt <- lbdb.dwd_busi_shuttle_bus_input_detail_f_d.launch_time AGGREGATION
+12 D month_new_input_cnt <- lbdb.dwd_busi_shuttle_bus_input_detail_f_d.site_code AGGREGATION
+12 D org_brnch_code <- lbdb.dwd_busi_shuttle_bus_input_detail_f_d.area_code IDENTITY
+12 D org_brnch_code <- lbdb.dwd_busi_shuttle_bus_input_detail_f_d.province_area_code IDENTITY
+12 D org_brnch_lvl <- <constant> CONSTANT
+12 D org_brnch_name <- lbdb.dwd_busi_shuttle_bus_input_detail_f_d.area_name IDENTITY
+12 D org_brnch_name <- lbdb.dwd_busi_shuttle_bus_input_detail_f_d.province_area_name IDENTITY
+12 D parent_site_code <- lbdb.dwd_busi_shuttle_bus_input_detail_f_d.province_area_code IDENTITY
+12 D parent_site_name <- lbdb.dwd_busi_shuttle_bus_input_detail_f_d.province_area_name IDENTITY
+12 D stats_date <- <constant> CONSTANT
+12 I lbdb.dwd_busi_shuttle_bus_input_detail_f_d.area_code x12
+12 I lbdb.dwd_busi_shuttle_bus_input_detail_f_d.area_name x12
+12 I lbdb.dwd_busi_shuttle_bus_input_detail_f_d.car_type x12
+12 I lbdb.dwd_busi_shuttle_bus_input_detail_f_d.input_type x12
+12 I lbdb.dwd_busi_shuttle_bus_input_detail_f_d.province_area_code x12
+12 I lbdb.dwd_busi_shuttle_bus_input_detail_f_d.province_area_name x12
+12 I lbdb.dwd_busi_shuttle_bus_input_detail_f_d.site_type_code x12
+12 I lbdb.dwd_busi_shuttle_bus_input_detail_f_d.stats_date x12
+12 N edges=119 direct=23
+13 T lbdb.ads_compass_timepoint_progress_monitor
+13 T lbdb.dm_pb_org_brnch_tx_fin_month
+13 T lbdb.dws_compass_timepoint_center_progress_monitor
+13 T lbdb.tx_bd_site_info
+13 D calc_weight <- lbdb.dws_compass_timepoint_center_progress_monitor.calc_weight AGGREGATION
+13 D etl_time <- <constant> CONSTANT
+13 D history_mvp_moment <- lbdb.dws_compass_timepoint_center_progress_monitor.timepoint EXPRESSION
+13 D history_mvp_progress <- lbdb.dws_compass_timepoint_center_progress_monitor.calc_weight AGGREGATION
+13 D history_mvp_progress <- lbdb.dws_compass_timepoint_center_progress_monitor.unload_calc_weight AGGREGATION
+13 D load_calc_weight <- lbdb.dws_compass_timepoint_center_progress_monitor.load_calc_weight AGGREGATION
+13 D load_pieces <- lbdb.dws_compass_timepoint_center_progress_monitor.load_pieces AGGREGATION
+13 D load_tickets <- lbdb.dws_compass_timepoint_center_progress_monitor.load_tickets AGGREGATION
+13 D org_brnch_lvl <- <constant> CONSTANT
+13 D org_code <- lbdb.dm_pb_org_brnch_tx_fin_month.fith_lvl_org_brnch_cd IDENTITY
+13 D org_code <- lbdb.tx_bd_site_info.center_code IDENTITY
+13 D org_name <- lbdb.dm_pb_org_brnch_tx_fin_month.fith_lvl_org_brnch_nm IDENTITY
+13 D org_name <- lbdb.tx_bd_site_info.center_name IDENTITY
+13 D pieces <- lbdb.dws_compass_timepoint_center_progress_monitor.pieces AGGREGATION
+13 D sort_calc_weight <- lbdb.dws_compass_timepoint_center_progress_monitor.sort_calc_weight AGGREGATION
+13 D sort_pieces <- lbdb.dws_compass_timepoint_center_progress_monitor.sort_pieces AGGREGATION
+13 D sort_tickets <- lbdb.dws_compass_timepoint_center_progress_monitor.sort_tickets AGGREGATION
+13 D tickets <- lbdb.dws_compass_timepoint_center_progress_monitor.tickets AGGREGATION
+13 D timepoint <- lbdb.dws_compass_timepoint_center_progress_monitor.timepoint IDENTITY
+13 D unload_calc_weight <- lbdb.dws_compass_timepoint_center_progress_monitor.unload_calc_weight AGGREGATION
+13 D unload_pieces <- lbdb.dws_compass_timepoint_center_progress_monitor.unload_pieces AGGREGATION
+13 D unload_progress <- lbdb.dws_compass_timepoint_center_progress_monitor.calc_weight AGGREGATION
+13 D unload_progress <- lbdb.dws_compass_timepoint_center_progress_monitor.unload_calc_weight AGGREGATION
+13 D unload_progress_type <- lbdb.dws_compass_timepoint_center_progress_monitor.calc_weight AGGREGATION
+13 D unload_progress_type <- lbdb.dws_compass_timepoint_center_progress_monitor.unload_calc_weight AGGREGATION
+13 D unload_tickets <- lbdb.dws_compass_timepoint_center_progress_monitor.unload_tickets AGGREGATION
+13 I lbdb.dm_pb_org_brnch_tx_fin_month.fith_lvl_org_brnch_cd x21
+13 I lbdb.dm_pb_org_brnch_tx_fin_month.fith_lvl_org_brnch_nm x21
+13 I lbdb.dm_pb_org_brnch_tx_fin_month.stats_month x21
+13 I lbdb.dm_pb_org_brnch_tx_fin_month.svth_lvl_org_brnch_cd x21
+13 I lbdb.dm_pb_org_brnch_tx_fin_month.svth_lvl_org_brnch_nm x21
+13 I lbdb.dws_compass_timepoint_center_progress_monitor.calc_weight x21
+13 I lbdb.dws_compass_timepoint_center_progress_monitor.send_center_code x21
+13 I lbdb.dws_compass_timepoint_center_progress_monitor.timepoint x21
+13 I lbdb.dws_compass_timepoint_center_progress_monitor.unload_calc_weight x21
+13 I lbdb.tx_bd_site_info.center_code x21
+13 I lbdb.tx_bd_site_info.center_name x21
+13 I lbdb.tx_bd_site_info.site_code x21
+13 I lbdb.tx_bd_site_info.site_name x21
+13 N edges=299 direct=26
+14 T lbdb.dws_opt_site_send_transit_fee_i_d
+14 T lbdb.ods_eagle_t_aging_distance_detail_f_d
+14 T lbdb.ods_tx_tx_waybill_info_i_30mi
+14 T lbdb.t_basic_area_conf
+14 T lbdb.t_bill_center_sum_total
+14 T lbdb.tx_basic_dict_entry
+14 T lbdb.tx_bd_site_detail
+14 T lbdb.tx_bd_site_info
+14 D area_property <- lbdb.t_basic_area_conf.area_property IDENTITY
+14 D calc_weight <- lbdb.ods_tx_tx_waybill_info_i_30mi.calc_weight AGGREGATION
+14 D data_type <- <constant> CONSTANT
+14 D dest_center_code <- lbdb.tx_bd_site_info.center_code IDENTITY
+14 D dest_center_name <- lbdb.tx_bd_site_info.center_name IDENTITY
+14 D dest_province_area_code <- lbdb.tx_bd_site_info.province_area_code IDENTITY
+14 D dest_province_area_name <- lbdb.tx_bd_site_info.province_area_name IDENTITY
+14 D dest_site_code <- lbdb.ods_tx_tx_waybill_info_i_30mi.dest_site_code IDENTITY
+14 D dest_site_name <- lbdb.tx_bd_site_info.site_name IDENTITY
+14 D distance_range <- lbdb.ods_eagle_t_aging_distance_detail_f_d.actual_distance EXPRESSION
+14 D distance_range_rn <- lbdb.ods_eagle_t_aging_distance_detail_f_d.actual_distance EXPRESSION
+14 D etl_time <- <constant> CONSTANT
+14 D order_source_id <- lbdb.ods_tx_tx_waybill_info_i_30mi.order_source_id IDENTITY
+14 D order_source_name <- lbdb.tx_basic_dict_entry.dict_name IDENTITY
+14 D product_type_code <- lbdb.ods_tx_tx_waybill_info_i_30mi.product_type_code IDENTITY
+14 D product_type_name <- lbdb.ods_tx_tx_waybill_info_i_30mi.product_type_name IDENTITY
+14 D send_center_code <- lbdb.tx_bd_site_info.center_code IDENTITY
+14 D send_center_name <- lbdb.tx_bd_site_info.center_name IDENTITY
+14 D send_province_area_code <- lbdb.tx_bd_site_info.province_area_code IDENTITY
+14 D send_province_area_name <- lbdb.tx_bd_site_info.province_area_name IDENTITY
+14 D send_site_code <- lbdb.ods_tx_tx_waybill_info_i_30mi.send_site_code IDENTITY
+14 D send_site_name <- lbdb.tx_bd_site_info.site_name IDENTITY
+14 D stats_date <- lbdb.ods_tx_tx_waybill_info_i_30mi.sign_time EXPRESSION
+14 D stats_month <- lbdb.ods_tx_tx_waybill_info_i_30mi.sign_time EXPRESSION
+14 D total_dispatch_in_fees <- lbdb.t_bill_center_sum_total.dispatch_in_fees AGGREGATION
+14 D total_dispatch_out_fees <- lbdb.t_bill_center_sum_total.dispatch_out_fees AGGREGATION
+14 D total_increment_in_fees <- lbdb.t_bill_center_sum_total.increment_in_fees AGGREGATION
+14 D total_increment_out_fees <- lbdb.t_bill_center_sum_total.increment_out_fees AGGREGATION
+14 D total_piece <- lbdb.ods_tx_tx_waybill_info_i_30mi.total_piece AGGREGATION
+14 D total_transfer_in_fees <- <constant> CONSTANT
+14 D total_transfer_out_fees <- lbdb.t_bill_center_sum_total.transfer_out_fees AGGREGATION
+14 D waybill_cnt <- <constant> CONSTANT
+14 D weight_range <- lbdb.ods_tx_tx_waybill_info_i_30mi.calc_weight EXPRESSION
+14 D weight_range_rn <- lbdb.ods_tx_tx_waybill_info_i_30mi.calc_weight EXPRESSION
+14 I lbdb.ods_eagle_t_aging_distance_detail_f_d.actual_distance x34
+14 I lbdb.ods_eagle_t_aging_distance_detail_f_d.aging_type x34
+14 I lbdb.ods_eagle_t_aging_distance_detail_f_d.from_site_code x34
+14 I lbdb.ods_eagle_t_aging_distance_detail_f_d.to_site_code x34
+14 I lbdb.ods_tx_tx_waybill_info_i_30mi.calc_weight x34
+14 I lbdb.ods_tx_tx_waybill_info_i_30mi.create_time x34
+14 I lbdb.ods_tx_tx_waybill_info_i_30mi.data_valid x34
+14 I lbdb.ods_tx_tx_waybill_info_i_30mi.dest_center_code x34
+14 I lbdb.ods_tx_tx_waybill_info_i_30mi.dest_site_code x34
+14 I lbdb.ods_tx_tx_waybill_info_i_30mi.order_source_id x34
+14 I lbdb.ods_tx_tx_waybill_info_i_30mi.product_type_code x34
+14 I lbdb.ods_tx_tx_waybill_info_i_30mi.product_type_name x34
+14 I lbdb.ods_tx_tx_waybill_info_i_30mi.send_center_code x34
+14 I lbdb.ods_tx_tx_waybill_info_i_30mi.send_site_code x34
+14 I lbdb.ods_tx_tx_waybill_info_i_30mi.sign_time x34
+14 I lbdb.ods_tx_tx_waybill_info_i_30mi.site_received x34
+14 I lbdb.ods_tx_tx_waybill_info_i_30mi.waybill_no x34
+14 I lbdb.t_basic_area_conf.area_property x34
+14 I lbdb.t_basic_area_conf.create_time x34
+14 I lbdb.t_basic_area_conf.dest_operating_code x34
+14 I lbdb.t_basic_area_conf.send_operating_code x34
+14 I lbdb.t_bill_center_sum_total.accounts_time x34
+14 I lbdb.t_bill_center_sum_total.ewb_no x34
+14 I lbdb.tx_basic_dict_entry.dict_code x34
+14 I lbdb.tx_basic_dict_entry.dict_name x34
+14 I lbdb.tx_basic_dict_entry.type_code x34
+14 I lbdb.tx_bd_site_detail.site_code x34
+14 I lbdb.tx_bd_site_info.center_code x34
+14 I lbdb.tx_bd_site_info.center_name x34
+14 I lbdb.tx_bd_site_info.first_site_code x34
+14 I lbdb.tx_bd_site_info.province_area_code x34
+14 I lbdb.tx_bd_site_info.province_area_name x34
+14 I lbdb.tx_bd_site_info.site_code x34
+14 I lbdb.tx_bd_site_info.site_name x34
+14 I lbdb.tx_bd_site_info.site_type_code x34
+14 N edges=1224 direct=34
+15 T lbdb.dwd_oper_region_position_status_i_d
+15 T lbdb.dws_oper_center_resign_cnt_i_d
+15 T lbdb.ods_ehr_tb_emp_adc_f_d
+15 T lbdb.tx_bd_site_info
+15 D center_code <- lbdb.dwd_oper_region_position_status_i_d.center_code EXPRESSION
+15 D center_code <- lbdb.tx_bd_site_info.site_code EXPRESSION
+15 D center_name <- lbdb.dwd_oper_region_position_status_i_d.center_name EXPRESSION
+15 D center_name <- lbdb.ods_ehr_tb_emp_adc_f_d.dept4_name EXPRESSION
+15 D department_hid <- lbdb.dwd_oper_region_position_status_i_d.department_hid EXPRESSION
+15 D department_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept5_hid EXPRESSION
+15 D department_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept5_name EXPRESSION
+15 D department_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept6_hid EXPRESSION
+15 D department_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept6_name EXPRESSION
+15 D department_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept7_hid EXPRESSION
+15 D department_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept7_name EXPRESSION
+15 D department_name <- lbdb.dwd_oper_region_position_status_i_d.department_name EXPRESSION
+15 D department_name <- lbdb.ods_ehr_tb_emp_adc_f_d.dept5_name EXPRESSION
+15 D department_name <- lbdb.ods_ehr_tb_emp_adc_f_d.dept6_name EXPRESSION
+15 D department_name <- lbdb.ods_ehr_tb_emp_adc_f_d.dept7_name EXPRESSION
+15 D employed_avg <- lbdb.dwd_oper_region_position_status_i_d.employed_count AGGREGATION
+15 D employed_avg <- lbdb.ods_ehr_tb_emp_adc_f_d.data_date AGGREGATION
+15 D employed_avg <- lbdb.ods_ehr_tb_emp_adc_f_d.labor_date AGGREGATION
+15 D group_hid <- lbdb.dwd_oper_region_position_status_i_d.group_hid EXPRESSION
+15 D group_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept5_hid EXPRESSION
+15 D group_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept5_name EXPRESSION
+15 D group_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept6_hid EXPRESSION
+15 D group_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept6_name EXPRESSION
+15 D group_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept7_hid EXPRESSION
+15 D group_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept7_name EXPRESSION
+15 D group_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept8_hid EXPRESSION
+15 D group_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept8_name EXPRESSION
+15 D group_name <- lbdb.dwd_oper_region_position_status_i_d.group_name EXPRESSION
+15 D group_name <- lbdb.ods_ehr_tb_emp_adc_f_d.dept5_name EXPRESSION
+15 D group_name <- lbdb.ods_ehr_tb_emp_adc_f_d.dept6_name EXPRESSION
+15 D group_name <- lbdb.ods_ehr_tb_emp_adc_f_d.dept7_name EXPRESSION
+15 D group_name <- lbdb.ods_ehr_tb_emp_adc_f_d.dept8_name EXPRESSION
+15 D org_operation_hid <- lbdb.dwd_oper_region_position_status_i_d.center_code EXPRESSION
+15 D org_operation_hid <- lbdb.dwd_oper_region_position_status_i_d.department_hid EXPRESSION
+15 D org_operation_hid <- lbdb.dwd_oper_region_position_status_i_d.group_hid EXPRESSION
+15 D org_operation_hid <- lbdb.dwd_oper_region_position_status_i_d.team_hid EXPRESSION
+15 D org_operation_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept5_hid EXPRESSION
+15 D org_operation_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept5_name EXPRESSION
+15 D org_operation_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept6_hid EXPRESSION
+15 D org_operation_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept6_name EXPRESSION
+15 D org_operation_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept7_hid EXPRESSION
+15 D org_operation_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept7_name EXPRESSION
+15 D org_operation_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept8_hid EXPRESSION
+15 D org_operation_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept8_name EXPRESSION
+15 D org_operation_hid <- lbdb.tx_bd_site_info.site_code EXPRESSION
+15 D org_operation_lvl <- <constant> CONSTANT
+15 D org_operation_name <- lbdb.dwd_oper_region_position_status_i_d.center_name EXPRESSION
+15 D org_operation_name <- lbdb.dwd_oper_region_position_status_i_d.department_name EXPRESSION
+15 D org_operation_name <- lbdb.dwd_oper_region_position_status_i_d.group_name EXPRESSION
+15 D org_operation_name <- lbdb.dwd_oper_region_position_status_i_d.team_name EXPRESSION
+15 D org_operation_name <- lbdb.ods_ehr_tb_emp_adc_f_d.dept4_name EXPRESSION
+15 D org_operation_name <- lbdb.ods_ehr_tb_emp_adc_f_d.dept5_name EXPRESSION
+15 D org_operation_name <- lbdb.ods_ehr_tb_emp_adc_f_d.dept6_name EXPRESSION
+15 D org_operation_name <- lbdb.ods_ehr_tb_emp_adc_f_d.dept7_name EXPRESSION
+15 D org_operation_name <- lbdb.ods_ehr_tb_emp_adc_f_d.dept8_name EXPRESSION
+15 D position_type <- <constant> CONSTANT
+15 D province_area_code <- lbdb.dwd_oper_region_position_status_i_d.province_area_code EXPRESSION
+15 D province_area_code <- lbdb.tx_bd_site_info.site_code EXPRESSION
+15 D province_area_name <- lbdb.dwd_oper_region_position_status_i_d.province_area_name EXPRESSION
+15 D province_area_name <- lbdb.ods_ehr_tb_emp_adc_f_d.company_name EXPRESSION
+15 D province_area_name <- lbdb.ods_ehr_tb_emp_adc_f_d.dept4_name EXPRESSION
+15 D resign_count <- lbdb.dwd_oper_region_position_status_i_d.resign_count AGGREGATION
+15 D stats_date <- <constant> CONSTANT
+15 D team_hid <- lbdb.dwd_oper_region_position_status_i_d.team_hid EXPRESSION
+15 D team_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept5_hid EXPRESSION
+15 D team_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept5_name EXPRESSION
+15 D team_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept6_hid EXPRESSION
+15 D team_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept6_name EXPRESSION
+15 D team_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept7_hid EXPRESSION
+15 D team_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept7_name EXPRESSION
+15 D team_name <- lbdb.dwd_oper_region_position_status_i_d.team_name EXPRESSION
+15 D team_name <- lbdb.ods_ehr_tb_emp_adc_f_d.dept5_name EXPRESSION
+15 D team_name <- lbdb.ods_ehr_tb_emp_adc_f_d.dept6_name EXPRESSION
+15 D team_name <- lbdb.ods_ehr_tb_emp_adc_f_d.dept7_name EXPRESSION
+15 I lbdb.dwd_oper_region_position_status_i_d.center_code x17
+15 I lbdb.dwd_oper_region_position_status_i_d.center_name x17
+15 I lbdb.dwd_oper_region_position_status_i_d.department_hid x17
+15 I lbdb.dwd_oper_region_position_status_i_d.department_name x17
+15 I lbdb.dwd_oper_region_position_status_i_d.group_hid x17
+15 I lbdb.dwd_oper_region_position_status_i_d.group_name x17
+15 I lbdb.dwd_oper_region_position_status_i_d.position_name x17
+15 I lbdb.dwd_oper_region_position_status_i_d.province_area_code x17
+15 I lbdb.dwd_oper_region_position_status_i_d.province_area_name x17
+15 I lbdb.dwd_oper_region_position_status_i_d.stats_date x17
+15 I lbdb.dwd_oper_region_position_status_i_d.team_hid x17
+15 I lbdb.dwd_oper_region_position_status_i_d.team_name x17
+15 I lbdb.ods_ehr_tb_emp_adc_f_d.company_name x17
+15 I lbdb.ods_ehr_tb_emp_adc_f_d.data_date x17
+15 I lbdb.ods_ehr_tb_emp_adc_f_d.dept4_name x17
+15 I lbdb.ods_ehr_tb_emp_adc_f_d.dept5_hid x17
+15 I lbdb.ods_ehr_tb_emp_adc_f_d.dept5_name x17
+15 I lbdb.ods_ehr_tb_emp_adc_f_d.dept6_hid x17
+15 I lbdb.ods_ehr_tb_emp_adc_f_d.dept6_name x17
+15 I lbdb.ods_ehr_tb_emp_adc_f_d.dept7_hid x17
+15 I lbdb.ods_ehr_tb_emp_adc_f_d.dept7_name x17
+15 I lbdb.ods_ehr_tb_emp_adc_f_d.dept8_hid x17
+15 I lbdb.ods_ehr_tb_emp_adc_f_d.dept8_name x17
+15 I lbdb.ods_ehr_tb_emp_adc_f_d.position_name x17
+15 I lbdb.ods_ehr_tb_emp_adc_f_d.status x17
+15 I lbdb.tx_bd_site_info.site_code x17
+15 I lbdb.tx_bd_site_info.site_name x17
+15 I lbdb.tx_bd_site_info.site_type_code x17
+15 N edges=550 direct=74
+16 T lbdb.dws_oper_waybill_retain_1d
+16 T lbdb.ods_eagle_t_basic_class_area_conf_new
+16 T lbdb.ods_tx_tx_site_clock_maintain_all
+16 T lbdb.ods_tx_tx_waybill_info_i_30mi
+16 T lbdb.tx_basic_dict_entry
+16 T lbdb.tx_bd_organize_build
+16 T lbdb.tx_bd_site_info
+16 T lbdb.tx_oper_center_send
+16 T lbdb.tx_oper_stock_realtime_ext
+16 T lbdb.tx_site_delivery_distance
+16 D calc_weight <- lbdb.tx_oper_stock_realtime_ext.calc_weight AGGREGATION
+16 D class_area <- lbdb.ods_eagle_t_basic_class_area_conf_new.class_area_name EXPRESSION
+16 D class_area <- lbdb.tx_oper_stock_realtime_ext.goods_flow_type AGGREGATION
+16 D class_area_name <- lbdb.ods_eagle_t_basic_class_area_conf_new.class_area_name EXPRESSION
+16 D class_area_name <- lbdb.tx_oper_stock_realtime_ext.goods_flow_type AGGREGATION
+16 D delivery_center_code <- lbdb.tx_oper_stock_realtime_ext.delivery_center_code AGGREGATION
+16 D delivery_center_code <- lbdb.tx_oper_stock_realtime_ext.instock_time AGGREGATION
+16 D delivery_center_name <- lbdb.tx_bd_site_info.site_name AGGREGATION
+16 D delivery_center_name <- lbdb.tx_oper_stock_realtime_ext.instock_time AGGREGATION
+16 D departure_time <- lbdb.ods_tx_tx_site_clock_maintain_all.must_clock_time AGGREGATION
+16 D dest_center_code <- lbdb.tx_bd_site_info.send_center_code AGGREGATION
+16 D dest_center_name <- lbdb.tx_bd_site_info.site_name AGGREGATION
+16 D dest_first_site_code <- lbdb.tx_bd_site_info.first_site_code AGGREGATION
+16 D dest_first_site_name <- lbdb.tx_bd_site_info.site_name AGGREGATION
+16 D dest_province_area_code <- lbdb.tx_bd_site_info.province_area_code AGGREGATION
+16 D dest_province_area_name <- lbdb.tx_bd_site_info.province_area_name AGGREGATION
+16 D dest_site_code <- lbdb.tx_oper_stock_realtime_ext.dest_site_code AGGREGATION
+16 D dest_site_name <- lbdb.tx_bd_site_info.site_name AGGREGATION
+16 D detained_pre_departure <- lbdb.ods_tx_tx_site_clock_maintain_all.must_clock_time AGGREGATION
+16 D detained_pre_departure <- lbdb.tx_oper_stock_realtime_ext.goods_flow_type AGGREGATION
+16 D detained_pre_departure <- lbdb.tx_oper_stock_realtime_ext.instock_time AGGREGATION
+16 D detained_pre_departure_90min <- lbdb.ods_tx_tx_site_clock_maintain_all.must_clock_time AGGREGATION
+16 D detained_pre_departure_90min <- lbdb.tx_oper_stock_realtime_ext.goods_flow_type AGGREGATION
+16 D detained_pre_departure_90min <- lbdb.tx_oper_stock_realtime_ext.instock_time AGGREGATION
+16 D distance <- lbdb.tx_oper_stock_realtime_ext.goods_flow_type AGGREGATION
+16 D distance <- lbdb.tx_site_delivery_distance.distance EXPRESSION
+16 D ec_id <- lbdb.ods_tx_tx_waybill_info_i_30mi.order_source_id AGGREGATION
+16 D ec_name <- lbdb.tx_basic_dict_entry.dict_name AGGREGATION
+16 D etl_time <- <constant> CONSTANT
+16 D goods_name <- lbdb.tx_oper_stock_realtime_ext.goods_name AGGREGATION
+16 D goods_volume <- lbdb.tx_oper_stock_realtime_ext.goods_volume AGGREGATION
+16 D goods_weight <- lbdb.tx_oper_stock_realtime_ext.goods_weight AGGREGATION
+16 D instock_center_code <- lbdb.tx_oper_stock_realtime_ext.center_site_code IDENTITY
+16 D instock_center_name <- lbdb.tx_bd_site_info.site_name AGGREGATION
+16 D instock_delivery_receipt_no <- lbdb.tx_oper_stock_realtime_ext.delivery_receipt_no AGGREGATION
+16 D instock_delivery_receipt_no <- lbdb.tx_oper_stock_realtime_ext.instock_time AGGREGATION
+16 D instock_province_area_code <- lbdb.tx_bd_site_info.province_area_code AGGREGATION
+16 D instock_province_area_name <- lbdb.tx_bd_site_info.province_area_name AGGREGATION
+16 D instock_time <- lbdb.tx_oper_stock_realtime_ext.instock_time AGGREGATION
+16 D kilometer_range <- lbdb.tx_oper_stock_realtime_ext.goods_flow_type AGGREGATION
+16 D kilometer_range <- lbdb.tx_site_delivery_distance.distance EXPRESSION
+16 D load_scan_time <- lbdb.tx_oper_stock_realtime_ext.load_scan_time AGGREGATION
+16 D loader_dept <- lbdb.tx_oper_center_send.operate_dept EXPRESSION
+16 D loader_team <- lbdb.tx_oper_center_send.operate_team IDENTITY
+16 D next_province_area_code <- lbdb.tx_bd_site_info.province_area_code AGGREGATION
+16 D next_province_area_code <- lbdb.tx_oper_stock_realtime_ext.goods_flow_type AGGREGATION
+16 D next_province_area_name <- lbdb.tx_bd_site_info.province_area_code AGGREGATION
+16 D next_province_area_name <- lbdb.tx_bd_site_info.province_area_name AGGREGATION
+16 D next_province_area_name <- lbdb.tx_oper_stock_realtime_ext.goods_flow_type AGGREGATION
+16 D next_site_code <- lbdb.tx_oper_stock_realtime_ext.next_site_code AGGREGATION
+16 D next_site_name <- lbdb.tx_bd_site_info.site_name AGGREGATION
+16 D out_confirm_time <- lbdb.tx_oper_stock_realtime_ext.out_confirm_time AGGREGATION
+16 D package_type <- lbdb.tx_oper_stock_realtime_ext.package_type AGGREGATION
+16 D pre_departure_90min <- lbdb.ods_tx_tx_site_clock_maintain_all.must_clock_time AGGREGATION
+16 D product_type_code <- lbdb.tx_oper_stock_realtime_ext.product_type_code AGGREGATION
+16 D product_type_name <- lbdb.tx_oper_stock_realtime_ext.product_type_name AGGREGATION
+16 D retain_duration <- lbdb.tx_oper_stock_realtime_ext.instock_time AGGREGATION
+16 D retain_time_slot <- lbdb.tx_oper_stock_realtime_ext.instock_time AGGREGATION
+16 D send_first_site_code <- lbdb.tx_bd_site_info.first_site_code AGGREGATION
+16 D send_first_site_name <- lbdb.tx_bd_site_info.site_name AGGREGATION
+16 D send_site_code <- lbdb.tx_oper_stock_realtime_ext.send_site_code AGGREGATION
+16 D send_site_name <- lbdb.tx_bd_site_info.site_name AGGREGATION
+16 D site_type_name <- lbdb.tx_bd_site_info.site_name AGGREGATION
+16 D sort_pre_departure <- lbdb.ods_tx_tx_site_clock_maintain_all.must_clock_time AGGREGATION
+16 D sort_pre_departure <- lbdb.tx_oper_stock_realtime_ext.goods_flow_type AGGREGATION
+16 D sort_pre_departure <- lbdb.tx_oper_stock_realtime_ext.instock_time AGGREGATION
+16 D sort_pre_departure <- lbdb.tx_oper_stock_realtime_ext.sort_time AGGREGATION
+16 D sort_scan_time <- lbdb.tx_oper_stock_realtime_ext.sort_time AGGREGATION
+16 D stats_time <- <constant> CONSTANT
+16 D stock_calc_weight <- lbdb.tx_oper_stock_realtime_ext.sub_calc_weight AGGREGATION
+16 D stock_node_type <- lbdb.tx_oper_stock_realtime_ext.goods_flow_type AGGREGATION
+16 D stock_qty <- lbdb.tx_oper_stock_realtime_ext.sub_waybill_no AGGREGATION
+16 D stock_qty <- lbdb.tx_oper_stock_realtime_ext.total_piece AGGREGATION
+16 D stock_status <- lbdb.tx_oper_stock_realtime_ext.load_scan_time AGGREGATION
+16 D stock_status <- lbdb.tx_oper_stock_realtime_ext.out_confirm_time AGGREGATION
+16 D stock_status <- lbdb.tx_oper_stock_realtime_ext.out_mode AGGREGATION
+16 D stock_status <- lbdb.tx_oper_stock_realtime_ext.outstock_time AGGREGATION
+16 D stock_status <- lbdb.tx_oper_stock_realtime_ext.sort_time AGGREGATION
+16 D validity_require <- lbdb.tx_oper_stock_realtime_ext.business_range AGGREGATION
+16 D waybill_no <- lbdb.tx_oper_stock_realtime_ext.waybill_no IDENTITY
+16 D weight_range_3300 <- lbdb.tx_oper_stock_realtime_ext.calc_weight AGGREGATION
+16 D zone_type_name <- lbdb.tx_oper_stock_realtime_ext.data_status AGGREGATION
+16 I lbdb.ods_eagle_t_basic_class_area_conf_new.dest_allocate_code x60
+16 I lbdb.ods_eagle_t_basic_class_area_conf_new.send_allocate_code x60
+16 I lbdb.ods_tx_tx_site_clock_maintain_all.classes x60
+16 I lbdb.ods_tx_tx_site_clock_maintain_all.clock_type x60
+16 I lbdb.ods_tx_tx_site_clock_maintain_all.data_valid x60
+16 I lbdb.ods_tx_tx_site_clock_maintain_all.scan_site_code x60
+16 I lbdb.ods_tx_tx_site_clock_maintain_all.site_code x60
+16 I lbdb.ods_tx_tx_waybill_info_i_30mi.create_time x60
+16 I lbdb.ods_tx_tx_waybill_info_i_30mi.order_source_id x60
+16 I lbdb.ods_tx_tx_waybill_info_i_30mi.total_weight x60
+16 I lbdb.ods_tx_tx_waybill_info_i_30mi.waybill_no x60
+16 I lbdb.tx_basic_dict_entry.dict_code x60
+16 I lbdb.tx_basic_dict_entry.type_code x60
+16 I lbdb.tx_bd_organize_build.data_valid x60
+16 I lbdb.tx_bd_organize_build.parent_code x60
+16 I lbdb.tx_bd_organize_build.site_code x60
+16 I lbdb.tx_bd_organize_build.site_type_code x60
+16 I lbdb.tx_bd_organize_build.structure_code x60
+16 I lbdb.tx_bd_site_info.first_site_code x60
+16 I lbdb.tx_bd_site_info.send_center_code x60
+16 I lbdb.tx_bd_site_info.site_code x60
+16 I lbdb.tx_bd_site_info.site_name x60
+16 I lbdb.tx_bd_site_info.site_status x60
+16 I lbdb.tx_oper_center_send.create_time x60
+16 I lbdb.tx_oper_center_send.next_arrive_flag x60
+16 I lbdb.tx_oper_center_send.next_site_code x60
+16 I lbdb.tx_oper_center_send.operate_team x60
+16 I lbdb.tx_oper_center_send.scan_site_code x60
+16 I lbdb.tx_oper_center_send.scan_time x60
+16 I lbdb.tx_oper_stock_realtime_ext.center_site_code x60
+16 I lbdb.tx_oper_stock_realtime_ext.create_time x60
+16 I lbdb.tx_oper_stock_realtime_ext.data_valid x60
+16 I lbdb.tx_oper_stock_realtime_ext.delivery_center_code x60
+16 I lbdb.tx_oper_stock_realtime_ext.dest_site_code x60
+16 I lbdb.tx_oper_stock_realtime_ext.goods_flow_type x60
+16 I lbdb.tx_oper_stock_realtime_ext.instock_time x60
+16 I lbdb.tx_oper_stock_realtime_ext.is_cdc_delete x60
+16 I lbdb.tx_oper_stock_realtime_ext.next_site_code x60
+16 I lbdb.tx_oper_stock_realtime_ext.outstock_time x60
+16 I lbdb.tx_oper_stock_realtime_ext.send_site_code x60
+16 I lbdb.tx_oper_stock_realtime_ext.waybill_no x60
+16 I lbdb.tx_site_delivery_distance.center_code x60
+16 I lbdb.tx_site_delivery_distance.create_time x60
+16 I lbdb.tx_site_delivery_distance.distance x60
+16 I lbdb.tx_site_delivery_distance.site_code x60
+16 N edges=2782 direct=82
+17 T lbdb.bd_bill_center_send
+17 T lbdb.dwd_fin_wayb_sign_site_income_cost_i_m
+17 T lbdb.tx_bd_site_info
+17 D calc_weight <- lbdb.bd_bill_center_send.calc_weight IDENTITY
+17 D ec_id <- lbdb.bd_bill_center_send.ec_id IDENTITY
+17 D etl_time <- <constant> CONSTANT
+17 D fee_1402 <- lbdb.bd_bill_center_send.fee_1402 IDENTITY
+17 D fee_1402_standard <- lbdb.bd_bill_center_send.fee_1402_standard IDENTITY
+17 D fee_1403 <- lbdb.bd_bill_center_send.fee_1403 IDENTITY
+17 D fee_1403_standard <- lbdb.bd_bill_center_send.fee_1403_standard IDENTITY
+17 D fee_1412 <- lbdb.bd_bill_center_send.fee_1412 IDENTITY
+17 D fee_1420 <- lbdb.bd_bill_center_send.fee_1420 IDENTITY
+17 D fee_1421 <- lbdb.bd_bill_center_send.fee_1421 IDENTITY
+17 D fee_15_standard <- lbdb.bd_bill_center_send.fee_15_standard IDENTITY
+17 D fee_1_1_version <- lbdb.bd_bill_center_send.fee_1_1_version IDENTITY
+17 D fee_1_2_version <- lbdb.bd_bill_center_send.fee_1_2_version IDENTITY
+17 D fee_1_operate <- lbdb.bd_bill_center_send.fee_1_operate IDENTITY
+17 D fee_1_shortbarge <- lbdb.bd_bill_center_send.fee_1_shortbarge IDENTITY
+17 D fee_1_trunk <- lbdb.bd_bill_center_send.fee_1_trunk IDENTITY
+17 D fee_6_standard <- lbdb.bd_bill_center_send.fee_6_standard IDENTITY
+17 D fee_site_1405 <- lbdb.bd_bill_center_send.fee_site_1405 IDENTITY
+17 D fee_site_1406 <- lbdb.bd_bill_center_send.fee_site_1406 IDENTITY
+17 D first_site_code <- lbdb.tx_bd_site_info.first_site_code IDENTITY
+17 D first_site_name <- lbdb.tx_bd_site_info.site_name IDENTITY
+17 D scan_source_id <- lbdb.bd_bill_center_send.scan_source_id IDENTITY
+17 D send_site_name <- lbdb.bd_bill_center_send.send_site_name IDENTITY
+17 D sign_date <- lbdb.bd_bill_center_send.sign_time EXPRESSION
+17 D sign_site_code <- lbdb.bd_bill_center_send.sign_site_code IDENTITY
+17 D sign_site_name <- lbdb.bd_bill_center_send.sign_site_name IDENTITY
+17 D stats_date <- <constant> CONSTANT
+17 D varchar_standby_2 <- lbdb.bd_bill_center_send.varchar_standby_2 IDENTITY
+17 D waybill_no <- lbdb.bd_bill_center_send.waybill_no IDENTITY
+17 I lbdb.bd_bill_center_send.accounts_time x29
+17 I lbdb.bd_bill_center_send.sign_site_id x29
+17 I lbdb.bd_bill_center_send.sign_time x29
+17 I lbdb.tx_bd_site_info.first_site_code x29
+17 I lbdb.tx_bd_site_info.site_code x29
+17 I lbdb.tx_bd_site_info.site_id x29
+17 N edges=203 direct=29
+18 T lbdb.dws_oper_org_send_arrival_diff_bf9_1d
+18 T lbdb.tx_bd_site_info
+18 T lbdb.tx_oper_stock_realtime_ext
+18 T lbdb.tx_waybill_info_ext
+18 D center_arrival_calc_weight <- lbdb.tx_oper_stock_realtime_ext.calc_weight AGGREGATION
+18 D center_arrival_ticket <- lbdb.tx_oper_stock_realtime_ext.waybill_no AGGREGATION
+18 D delivery_center_code <- lbdb.tx_waybill_info_ext.send_center_code IDENTITY
+18 D delivery_center_name <- lbdb.tx_bd_site_info.site_name IDENTITY
+18 D org_brnch_code <- lbdb.tx_bd_site_info.area_code IDENTITY
+18 D org_brnch_code <- lbdb.tx_bd_site_info.province_area_code IDENTITY
+18 D org_brnch_code <- lbdb.tx_waybill_info_ext.send_center_code IDENTITY
+18 D org_brnch_code <- lbdb.tx_waybill_info_ext.send_first_site_code IDENTITY
+18 D org_brnch_code <- lbdb.tx_waybill_info_ext.send_site_code IDENTITY
+18 D org_brnch_lvl <- <constant> CONSTANT
+18 D org_brnch_name <- lbdb.tx_bd_site_info.area_name IDENTITY
+18 D org_brnch_name <- lbdb.tx_bd_site_info.province_area_name IDENTITY
+18 D org_brnch_name <- lbdb.tx_bd_site_info.site_name IDENTITY
+18 D send_area_code <- lbdb.tx_bd_site_info.area_code IDENTITY
+18 D send_area_name <- lbdb.tx_bd_site_info.area_name IDENTITY
+18 D send_arrival_weight_diff <- lbdb.tx_oper_stock_realtime_ext.calc_weight AGGREGATION
+18 D send_arrival_weight_diff <- lbdb.tx_waybill_info_ext.calc_weight AGGREGATION
+18 D send_calc_weight <- lbdb.tx_waybill_info_ext.calc_weight AGGREGATION
+18 D send_first_site_code <- lbdb.tx_waybill_info_ext.send_first_site_code IDENTITY
+18 D send_first_site_name <- lbdb.tx_bd_site_info.site_name IDENTITY
+18 D send_province_area_code <- lbdb.tx_bd_site_info.province_area_code IDENTITY
+18 D send_province_area_name <- lbdb.tx_bd_site_info.province_area_name IDENTITY
+18 D send_site_code <- lbdb.tx_waybill_info_ext.send_site_code IDENTITY
+18 D send_site_name <- lbdb.tx_bd_site_info.site_name IDENTITY
+18 D send_ticket <- <constant> CONSTANT
+18 D stats_date <- <constant> CONSTANT
+18 I lbdb.tx_bd_site_info.area_code x19
+18 I lbdb.tx_bd_site_info.area_name x19
+18 I lbdb.tx_bd_site_info.province_area_code x19
+18 I lbdb.tx_bd_site_info.province_area_name x19
+18 I lbdb.tx_bd_site_info.site_code x19
+18 I lbdb.tx_bd_site_info.site_name x19
+18 I lbdb.tx_oper_stock_realtime_ext.center_site_code x19
+18 I lbdb.tx_oper_stock_realtime_ext.create_time x19
+18 I lbdb.tx_oper_stock_realtime_ext.data_valid x19
+18 I lbdb.tx_oper_stock_realtime_ext.instock_time x19
+18 I lbdb.tx_oper_stock_realtime_ext.is_cdc_delete x19
+18 I lbdb.tx_oper_stock_realtime_ext.waybill_no x19
+18 I lbdb.tx_waybill_info_ext.data_valid x19
+18 I lbdb.tx_waybill_info_ext.send_center_code x19
+18 I lbdb.tx_waybill_info_ext.send_date x19
+18 I lbdb.tx_waybill_info_ext.send_date_9to9_date x19
+18 I lbdb.tx_waybill_info_ext.send_first_site_code x19
+18 I lbdb.tx_waybill_info_ext.send_site_code x19
+18 I lbdb.tx_waybill_info_ext.site_received x19
+18 I lbdb.tx_waybill_info_ext.waybill_no x19
+18 N edges=406 direct=26
+19 T lbdb.dwd_oper_send_arrival_diff_af9_i_d
+19 T lbdb.tx_bd_site_info
+19 T lbdb.tx_oper_stock_realtime_ext
+19 T lbdb.tx_waybill_info_ext
+19 D delivery_center_code <- lbdb.tx_waybill_info_ext.send_center_code IDENTITY
+19 D delivery_center_name <- lbdb.tx_bd_site_info.site_name IDENTITY
+19 D send_area_code <- lbdb.tx_bd_site_info.area_code IDENTITY
+19 D send_area_name <- lbdb.tx_bd_site_info.area_name IDENTITY
+19 D send_first_site_code <- lbdb.tx_waybill_info_ext.send_first_site_code IDENTITY
+19 D send_first_site_name <- lbdb.tx_bd_site_info.site_name IDENTITY
+19 D send_province_area_code <- lbdb.tx_bd_site_info.province_area_code IDENTITY
+19 D send_province_area_name <- lbdb.tx_bd_site_info.province_area_name IDENTITY
+19 D send_site_code <- lbdb.tx_waybill_info_ext.send_site_code IDENTITY
+19 D send_site_name <- lbdb.tx_bd_site_info.site_name IDENTITY
+19 D send_time <- lbdb.tx_waybill_info_ext.send_date IDENTITY
+19 D stats_date <- <constant> CONSTANT
+19 D waybill_no <- lbdb.tx_waybill_info_ext.waybill_no IDENTITY
+19 I lbdb.tx_bd_site_info.site_code x13
+19 I lbdb.tx_oper_stock_realtime_ext.center_site_code x13
+19 I lbdb.tx_oper_stock_realtime_ext.create_time x13
+19 I lbdb.tx_oper_stock_realtime_ext.data_valid x13
+19 I lbdb.tx_oper_stock_realtime_ext.instock_time x13
+19 I lbdb.tx_oper_stock_realtime_ext.is_cdc_delete x13
+19 I lbdb.tx_oper_stock_realtime_ext.waybill_no x13
+19 I lbdb.tx_waybill_info_ext.data_valid x13
+19 I lbdb.tx_waybill_info_ext.send_center_code x13
+19 I lbdb.tx_waybill_info_ext.send_date x13
+19 I lbdb.tx_waybill_info_ext.send_date_9to9_date x13
+19 I lbdb.tx_waybill_info_ext.send_first_site_code x13
+19 I lbdb.tx_waybill_info_ext.send_site_code x13
+19 I lbdb.tx_waybill_info_ext.site_received x13
+19 I lbdb.tx_waybill_info_ext.waybill_no x13
+19 N edges=208 direct=13
+20 T lbdb.dwd_oper_region_position_status_i_d
+20 T lbdb.ods_ehr_tb_emp_adc_f_d
+20 T lbdb.tx_bd_site_info
+20 D center_code <- lbdb.tx_bd_site_info.site_code IDENTITY
+20 D center_name <- lbdb.ods_ehr_tb_emp_adc_f_d.dept4_name IDENTITY
+20 D day_operate_dept_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept5_hid EXPRESSION
+20 D day_operate_dept_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept5_name EXPRESSION
+20 D day_operate_dept_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept6_hid EXPRESSION
+20 D day_operate_dept_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept6_name EXPRESSION
+20 D day_operate_dept_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept7_hid EXPRESSION
+20 D day_operate_dept_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept7_name EXPRESSION
+20 D day_operate_dept_name <- lbdb.ods_ehr_tb_emp_adc_f_d.dept5_name EXPRESSION
+20 D day_operate_dept_name <- lbdb.ods_ehr_tb_emp_adc_f_d.dept6_name EXPRESSION
+20 D day_operate_dept_name <- lbdb.ods_ehr_tb_emp_adc_f_d.dept7_name EXPRESSION
+20 D department_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept5_hid EXPRESSION
+20 D department_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept5_name EXPRESSION
+20 D department_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept6_hid EXPRESSION
+20 D department_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept6_name EXPRESSION
+20 D department_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept7_hid EXPRESSION
+20 D department_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept7_name EXPRESSION
+20 D department_name <- lbdb.ods_ehr_tb_emp_adc_f_d.dept5_name EXPRESSION
+20 D department_name <- lbdb.ods_ehr_tb_emp_adc_f_d.dept6_name EXPRESSION
+20 D department_name <- lbdb.ods_ehr_tb_emp_adc_f_d.dept7_name EXPRESSION
+20 D employed_count <- lbdb.ods_ehr_tb_emp_adc_f_d.status AGGREGATION
+20 D group_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept5_hid EXPRESSION
+20 D group_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept5_name EXPRESSION
+20 D group_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept6_hid EXPRESSION
+20 D group_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept6_name EXPRESSION
+20 D group_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept7_hid EXPRESSION
+20 D group_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept7_name EXPRESSION
+20 D group_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept8_hid EXPRESSION
+20 D group_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept8_name EXPRESSION
+20 D group_name <- lbdb.ods_ehr_tb_emp_adc_f_d.dept5_name EXPRESSION
+20 D group_name <- lbdb.ods_ehr_tb_emp_adc_f_d.dept6_name EXPRESSION
+20 D group_name <- lbdb.ods_ehr_tb_emp_adc_f_d.dept7_name EXPRESSION
+20 D group_name <- lbdb.ods_ehr_tb_emp_adc_f_d.dept8_name EXPRESSION
+20 D org_operation_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept_hid EXPRESSION
+20 D org_operation_hid <- lbdb.tx_bd_site_info.site_code EXPRESSION
+20 D org_operation_lvl <- lbdb.ods_ehr_tb_emp_adc_f_d.dept_name EXPRESSION
+20 D org_operation_lvl <- lbdb.tx_bd_site_info.site_type_code EXPRESSION
+20 D org_operation_name <- lbdb.ods_ehr_tb_emp_adc_f_d.dept_name IDENTITY
+20 D position_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.position_hid IDENTITY
+20 D position_name <- lbdb.ods_ehr_tb_emp_adc_f_d.position_name IDENTITY
+20 D province_area_code <- lbdb.tx_bd_site_info.site_code IDENTITY
+20 D province_area_name <- lbdb.ods_ehr_tb_emp_adc_f_d.company_name EXPRESSION
+20 D province_area_name <- lbdb.ods_ehr_tb_emp_adc_f_d.dept4_name EXPRESSION
+20 D resign_count <- lbdb.ods_ehr_tb_emp_adc_f_d.data_date AGGREGATION
+20 D resign_count <- lbdb.ods_ehr_tb_emp_adc_f_d.labor_date AGGREGATION
+20 D resign_count <- lbdb.ods_ehr_tb_emp_adc_f_d.leave_date AGGREGATION
+20 D resign_count <- lbdb.ods_ehr_tb_emp_adc_f_d.status AGGREGATION
+20 D sequence_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.sequence_hid IDENTITY
+20 D sequence_name <- lbdb.ods_ehr_tb_emp_adc_f_d.sequence_name IDENTITY
+20 D stats_date <- lbdb.ods_ehr_tb_emp_adc_f_d.data_date IDENTITY
+20 D team_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept5_hid EXPRESSION
+20 D team_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept5_name EXPRESSION
+20 D team_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept6_hid EXPRESSION
+20 D team_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept6_name EXPRESSION
+20 D team_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept7_hid EXPRESSION
+20 D team_hid <- lbdb.ods_ehr_tb_emp_adc_f_d.dept7_name EXPRESSION
+20 D team_name <- lbdb.ods_ehr_tb_emp_adc_f_d.dept5_name EXPRESSION
+20 D team_name <- lbdb.ods_ehr_tb_emp_adc_f_d.dept6_name EXPRESSION
+20 D team_name <- lbdb.ods_ehr_tb_emp_adc_f_d.dept7_name EXPRESSION
+20 I lbdb.ods_ehr_tb_emp_adc_f_d.company_name x22
+20 I lbdb.ods_ehr_tb_emp_adc_f_d.data_date x22
+20 I lbdb.ods_ehr_tb_emp_adc_f_d.dept4_name x22
+20 I lbdb.ods_ehr_tb_emp_adc_f_d.dept5_hid x22
+20 I lbdb.ods_ehr_tb_emp_adc_f_d.dept5_name x22
+20 I lbdb.ods_ehr_tb_emp_adc_f_d.dept6_hid x22
+20 I lbdb.ods_ehr_tb_emp_adc_f_d.dept6_name x22
+20 I lbdb.ods_ehr_tb_emp_adc_f_d.dept7_hid x22
+20 I lbdb.ods_ehr_tb_emp_adc_f_d.dept7_name x22
+20 I lbdb.ods_ehr_tb_emp_adc_f_d.dept8_hid x22
+20 I lbdb.ods_ehr_tb_emp_adc_f_d.dept8_name x22
+20 I lbdb.ods_ehr_tb_emp_adc_f_d.dept_hid x22
+20 I lbdb.ods_ehr_tb_emp_adc_f_d.dept_name x22
+20 I lbdb.ods_ehr_tb_emp_adc_f_d.labor_date x22
+20 I lbdb.ods_ehr_tb_emp_adc_f_d.leave_date x22
+20 I lbdb.ods_ehr_tb_emp_adc_f_d.position_hid x22
+20 I lbdb.ods_ehr_tb_emp_adc_f_d.position_name x22
+20 I lbdb.ods_ehr_tb_emp_adc_f_d.sequence_hid x22
+20 I lbdb.ods_ehr_tb_emp_adc_f_d.sequence_name x22
+20 I lbdb.ods_ehr_tb_emp_adc_f_d.status x22
+20 I lbdb.tx_bd_site_info.site_code x22
+20 I lbdb.tx_bd_site_info.site_name x22
+20 I lbdb.tx_bd_site_info.site_type_code x22
+20 N edges=565 direct=59
+21 T lbdb.bd_bill_center_send
+21 T lbdb.dwd_busi_waybill_today_due_detail_i_d
+21 D bill_accounts_time <- lbdb.bd_bill_center_send.accounts_time IDENTITY
+21 D bill_ec_id <- lbdb.dwd_busi_waybill_today_due_detail_i_d.bill_ec_id IDENTITY
+21 D bill_ec_name <- lbdb.dwd_busi_waybill_today_due_detail_i_d.bill_ec_name IDENTITY
+21 D bill_sign_time <- lbdb.bd_bill_center_send.sign_time IDENTITY
+21 D fixed_time <- lbdb.dwd_busi_waybill_today_due_detail_i_d.fixed_time IDENTITY
+21 D is_sign <- lbdb.bd_bill_center_send.is_sign IDENTITY
+21 D order_dest_center_code <- lbdb.dwd_busi_waybill_today_due_detail_i_d.order_dest_center_code IDENTITY
+21 D order_dest_center_name <- lbdb.dwd_busi_waybill_today_due_detail_i_d.order_dest_center_name IDENTITY
+21 D order_dest_site_code <- lbdb.dwd_busi_waybill_today_due_detail_i_d.order_dest_site_code IDENTITY
+21 D order_dest_site_name <- lbdb.dwd_busi_waybill_today_due_detail_i_d.order_dest_site_name IDENTITY
+21 D order_is_delivery_timely <- lbdb.bd_bill_center_send.active EXPRESSION
+21 D order_is_delivery_timely <- lbdb.bd_bill_center_send.sign_time EXPRESSION
+21 D order_is_delivery_timely <- lbdb.dwd_busi_waybill_today_due_detail_i_d.stats_date EXPRESSION
+21 D order_no <- lbdb.dwd_busi_waybill_today_due_detail_i_d.order_no IDENTITY
+21 D order_reach_city_name <- lbdb.dwd_busi_waybill_today_due_detail_i_d.order_reach_city_name IDENTITY
+21 D order_send_city_name <- lbdb.dwd_busi_waybill_today_due_detail_i_d.order_send_city_name IDENTITY
+21 D order_send_site_code <- lbdb.dwd_busi_waybill_today_due_detail_i_d.order_send_site_code IDENTITY
+21 D order_send_site_name <- lbdb.dwd_busi_waybill_today_due_detail_i_d.order_send_site_name IDENTITY
+21 D stats_date <- lbdb.dwd_busi_waybill_today_due_detail_i_d.stats_date IDENTITY
+21 D waybill_no <- lbdb.dwd_busi_waybill_today_due_detail_i_d.waybill_no IDENTITY
+21 I lbdb.bd_bill_center_send.accounts_time x18
+21 I lbdb.bd_bill_center_send.ec_id x18
+21 I lbdb.bd_bill_center_send.waybill_no x18
+21 I lbdb.dwd_busi_waybill_today_due_detail_i_d.is_sign x18
+21 I lbdb.dwd_busi_waybill_today_due_detail_i_d.stats_date x18
+21 I lbdb.dwd_busi_waybill_today_due_detail_i_d.waybill_no x18
+21 N edges=128 direct=20
+22 T lbdb.dim_gis_tb_base_time_efficient
+22 T lbdb.ods_gis_tb_base_division
+22 T lbdb.ods_gis_tb_base_fence_division
+22 T lbdb.ods_gis_tb_base_site
+22 T lbdb.tb_base_time_efficient
+22 T lbdb.tx_bd_site_info
+22 D administrative_unit <- lbdb.tb_base_time_efficient.administrative_unit IDENTITY
+22 D average_daily_cargo <- lbdb.tb_base_time_efficient.average_daily_cargo IDENTITY
+22 D big_area_name <- lbdb.tb_base_time_efficient.big_area_name IDENTITY
+22 D center_name <- lbdb.tb_base_time_efficient.center_name IDENTITY
+22 D city_code <- lbdb.tb_base_time_efficient.city_code IDENTITY
+22 D city_name <- lbdb.tb_base_time_efficient.city_name IDENTITY
+22 D create_time <- lbdb.tb_base_time_efficient.create_time IDENTITY
+22 D create_user <- lbdb.tb_base_time_efficient.create_user IDENTITY
+22 D district_code <- lbdb.tb_base_time_efficient.district_code IDENTITY
+22 D district_name <- lbdb.tb_base_time_efficient.district_name IDENTITY
+22 D is_blind <- lbdb.tb_base_time_efficient.is_blind IDENTITY
+22 D is_deleted <- lbdb.tb_base_time_efficient.is_deleted IDENTITY
+22 D is_second_delivery <- lbdb.tb_base_time_efficient.is_second_delivery IDENTITY
+22 D modify_time <- lbdb.tb_base_time_efficient.modify_time IDENTITY
+22 D modify_user <- lbdb.tb_base_time_efficient.modify_user IDENTITY
+22 D province_area_name <- lbdb.tb_base_time_efficient.province_area_name IDENTITY
+22 D province_code <- lbdb.tb_base_time_efficient.province_code IDENTITY
+22 D province_name <- lbdb.tb_base_time_efficient.province_name IDENTITY
+22 D remark <- lbdb.tb_base_time_efficient.remark IDENTITY
+22 D site_code <- lbdb.tx_bd_site_info.site_code IDENTITY
+22 D site_name <- lbdb.tx_bd_site_info.site_name IDENTITY
+22 D stats_date <- <constant> CONSTANT
+22 D status <- lbdb.tb_base_time_efficient.status IDENTITY
+22 D street_code <- lbdb.tb_base_time_efficient.street_code IDENTITY
+22 D street_name <- lbdb.tb_base_time_efficient.street_name IDENTITY
+22 D time_efficient <- lbdb.tb_base_time_efficient.time_efficient IDENTITY
+22 I lbdb.ods_gis_tb_base_division.grid1_code x26
+22 I lbdb.ods_gis_tb_base_division.grid2_code x26
+22 I lbdb.ods_gis_tb_base_division.level x26
+22 I lbdb.ods_gis_tb_base_division.stats_date x26
+22 I lbdb.ods_gis_tb_base_division.street_code x26
+22 I lbdb.ods_gis_tb_base_fence_division.division_code x26
+22 I lbdb.ods_gis_tb_base_fence_division.fence_id x26
+22 I lbdb.ods_gis_tb_base_fence_division.fence_type x26
+22 I lbdb.ods_gis_tb_base_fence_division.stats_date x26
+22 I lbdb.ods_gis_tb_base_site.address x26
+22 I lbdb.ods_gis_tb_base_site.approve_status x26
+22 I lbdb.ods_gis_tb_base_site.id x26
+22 I lbdb.ods_gis_tb_base_site.link_persen x26
+22 I lbdb.ods_gis_tb_base_site.link_phone x26
+22 I lbdb.ods_gis_tb_base_site.parent_id x26
+22 I lbdb.ods_gis_tb_base_site.stats_date x26
+22 I lbdb.tb_base_time_efficient.street_code x26
+22 I lbdb.tx_bd_site_info.site_id x26
+22 N edges=494 direct=26
+23 T lbdb.dim_gis_tb_base_site_info_d
+23 T lbdb.ods_gis_tb_base_site
+23 D approve_status <- lbdb.ods_gis_tb_base_site.approve_status IDENTITY
+23 D bis_status <- lbdb.ods_gis_tb_base_site.bis_status IDENTITY
+23 D coordinate <- lbdb.ods_gis_tb_base_site.coordinate IDENTITY
+23 D electronic_fence <- lbdb.ods_gis_tb_base_site.electronic_fence IDENTITY
+23 D etl_time <- <constant> CONSTANT
+23 D id <- lbdb.ods_gis_tb_base_site.id IDENTITY
+23 D modified_time <- lbdb.ods_gis_tb_base_site.modified_time IDENTITY
+23 D parent_id <- lbdb.ods_gis_tb_base_site.parent_id IDENTITY
+23 D service_type <- lbdb.ods_gis_tb_base_site.service_type IDENTITY
+23 D site_code <- lbdb.ods_gis_tb_base_site.site_code IDENTITY
+23 D site_name <- lbdb.ods_gis_tb_base_site.site_name IDENTITY
+23 D site_nature <- lbdb.ods_gis_tb_base_site.site_nature IDENTITY
+23 D site_type <- lbdb.ods_gis_tb_base_site.site_type IDENTITY
+23 D stats_date <- lbdb.ods_gis_tb_base_site.stats_date IDENTITY
+23 I lbdb.ods_gis_tb_base_site.electronic_fence x14
+23 I lbdb.ods_gis_tb_base_site.stats_date x14
+23 N edges=42 direct=14
+24 T lbdb.bd_work_day
+24 T lbdb.dws_oper_eff_delivery_rate
+24 T lbdb.dws_oper_eff_delivery_rate_v
+24 D area_code <- lbdb.dws_oper_eff_delivery_rate.next_area_code IDENTITY
+24 D area_name <- lbdb.dws_oper_eff_delivery_rate.next_area_name IDENTITY
+24 D center_code <- lbdb.dws_oper_eff_delivery_rate.next_center_code IDENTITY
+24 D center_name <- lbdb.dws_oper_eff_delivery_rate.next_center_name IDENTITY
+24 D city_code <- lbdb.dws_oper_eff_delivery_rate.receiver_city_code IDENTITY
+24 D city_name <- lbdb.dws_oper_eff_delivery_rate.receiver_city_name IDENTITY
+24 D create_time <- <constant> CONSTANT
+24 D district_code <- lbdb.dws_oper_eff_delivery_rate.receiver_district_code IDENTITY
+24 D district_name <- lbdb.dws_oper_eff_delivery_rate.receiver_district_name IDENTITY
+24 D first_site_code <- lbdb.dws_oper_eff_delivery_rate.next_first_site_code IDENTITY
+24 D first_site_name <- lbdb.dws_oper_eff_delivery_rate.next_first_site_name IDENTITY
+24 D month_should_sign_cnt <- lbdb.dws_oper_eff_delivery_rate.should_sign_cnt AGGREGATION
+24 D month_should_sign_cnt_nwd <- lbdb.bd_work_day.workday AGGREGATION
+24 D month_should_sign_cnt_nwd <- lbdb.dws_oper_eff_delivery_rate.should_sign_cnt AGGREGATION
+24 D month_should_sign_cnt_wd <- lbdb.bd_work_day.workday AGGREGATION
+24 D month_should_sign_cnt_wd <- lbdb.dws_oper_eff_delivery_rate.should_sign_cnt AGGREGATION
+24 D month_sign_cnt <- lbdb.dws_oper_eff_delivery_rate.day_sign_cnt AGGREGATION
+24 D month_sign_cnt_nwd <- lbdb.bd_work_day.workday AGGREGATION
+24 D month_sign_cnt_nwd <- lbdb.dws_oper_eff_delivery_rate.day_sign_cnt AGGREGATION
+24 D month_sign_cnt_wd <- lbdb.bd_work_day.workday AGGREGATION
+24 D month_sign_cnt_wd <- lbdb.dws_oper_eff_delivery_rate.day_sign_cnt AGGREGATION
+24 D province_area_code <- lbdb.dws_oper_eff_delivery_rate.next_province_area_code IDENTITY
+24 D province_area_name <- lbdb.dws_oper_eff_delivery_rate.next_province_area_name IDENTITY
+24 D province_code <- lbdb.dws_oper_eff_delivery_rate.receiver_province_code IDENTITY
+24 D province_name <- lbdb.dws_oper_eff_delivery_rate.receiver_province_name IDENTITY
+24 D should_sign_cnt <- lbdb.dws_oper_eff_delivery_rate.should_sign_cnt AGGREGATION
+24 D sign_cnt <- lbdb.dws_oper_eff_delivery_rate.day_sign_cnt AGGREGATION
+24 D site_code <- lbdb.dws_oper_eff_delivery_rate.next_site_code IDENTITY
+24 D site_name <- lbdb.dws_oper_eff_delivery_rate.next_site_name IDENTITY
+24 D stats_date <- <constant> CONSTANT
+24 D street_code <- lbdb.dws_oper_eff_delivery_rate.receiver_street_code IDENTITY
+24 D street_name <- lbdb.dws_oper_eff_delivery_rate.receiver_street IDENTITY
+24 D week_should_sign_cnt <- lbdb.dws_oper_eff_delivery_rate.should_sign_cnt AGGREGATION
+24 D week_sign_cnt <- lbdb.dws_oper_eff_delivery_rate.day_sign_cnt AGGREGATION
+24 D weight_range_3300 <- lbdb.dws_oper_eff_delivery_rate.weight_range_3300 IDENTITY
+24 I lbdb.bd_work_day.idate x31
+24 I lbdb.dws_oper_eff_delivery_rate.next_area_code x31
+24 I lbdb.dws_oper_eff_delivery_rate.next_area_name x31
+24 I lbdb.dws_oper_eff_delivery_rate.next_center_code x31
+24 I lbdb.dws_oper_eff_delivery_rate.next_center_name x31
+24 I lbdb.dws_oper_eff_delivery_rate.next_first_site_code x31
+24 I lbdb.dws_oper_eff_delivery_rate.next_first_site_name x31
+24 I lbdb.dws_oper_eff_delivery_rate.next_province_area_code x31
+24 I lbdb.dws_oper_eff_delivery_rate.next_province_area_name x31
+24 I lbdb.dws_oper_eff_delivery_rate.next_site_code x31
+24 I lbdb.dws_oper_eff_delivery_rate.next_site_name x31
+24 I lbdb.dws_oper_eff_delivery_rate.receiver_city_code x31
+24 I lbdb.dws_oper_eff_delivery_rate.receiver_city_name x31
+24 I lbdb.dws_oper_eff_delivery_rate.receiver_district_code x31
+24 I lbdb.dws_oper_eff_delivery_rate.receiver_district_name x31
+24 I lbdb.dws_oper_eff_delivery_rate.receiver_province_code x31
+24 I lbdb.dws_oper_eff_delivery_rate.receiver_province_name x31
+24 I lbdb.dws_oper_eff_delivery_rate.receiver_street x31
+24 I lbdb.dws_oper_eff_delivery_rate.receiver_street_code x31
+24 I lbdb.dws_oper_eff_delivery_rate.stats_date x31
+24 I lbdb.dws_oper_eff_delivery_rate.weight_range_3300 x31
+24 N edges=686 direct=35
+25 T lbdb.dwd_oper_eff_delivery_rate_should_sign
+25 T lbdb.dws_oper_eff_delivery_rate_delivery
+25 D day_sign_cnt <- lbdb.dwd_oper_eff_delivery_rate_should_sign.day_sign_flag AGGREGATION
+25 D delivery_code <- lbdb.dwd_oper_eff_delivery_rate_should_sign.delivery_code IDENTITY
+25 D delivery_name <- lbdb.dwd_oper_eff_delivery_rate_should_sign.delivery_name IDENTITY
+25 D dest_area_code <- lbdb.dwd_oper_eff_delivery_rate_should_sign.next_area_code IDENTITY
+25 D dest_area_name <- lbdb.dwd_oper_eff_delivery_rate_should_sign.next_area_name IDENTITY
+25 D dest_center_code <- lbdb.dwd_oper_eff_delivery_rate_should_sign.next_center_code IDENTITY
+25 D dest_center_name <- lbdb.dwd_oper_eff_delivery_rate_should_sign.next_center_name IDENTITY
+25 D dest_first_site_code <- lbdb.dwd_oper_eff_delivery_rate_should_sign.dest_first_site_code IDENTITY
+25 D dest_first_site_name <- lbdb.dwd_oper_eff_delivery_rate_should_sign.dest_first_site_name IDENTITY
+25 D dest_province_area_code <- lbdb.dwd_oper_eff_delivery_rate_should_sign.next_province_area_code IDENTITY
+25 D dest_province_area_name <- lbdb.dwd_oper_eff_delivery_rate_should_sign.next_province_area_name IDENTITY
+25 D dest_site_code <- lbdb.dwd_oper_eff_delivery_rate_should_sign.dest_site_code IDENTITY
+25 D dest_site_name <- lbdb.dwd_oper_eff_delivery_rate_should_sign.dest_site_name IDENTITY
+25 D etl_time <- <constant> CONSTANT
+25 D real_sign_cnt <- lbdb.dwd_oper_eff_delivery_rate_should_sign.day_sign_flag AGGREGATION
+25 D real_sign_cnt <- lbdb.dwd_oper_eff_delivery_rate_should_sign.next_province_area_name AGGREGATION
+25 D real_sign_cnt <- lbdb.dwd_oper_eff_delivery_rate_should_sign.real_sign_flag AGGREGATION
+25 D receiver_city_name <- lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_city_name IDENTITY
+25 D receiver_district_name <- lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_district_name IDENTITY
+25 D receiver_province_name <- lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_province_name IDENTITY
+25 D receiver_street <- lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_street IDENTITY
+25 D should_sign_cnt <- lbdb.dwd_oper_eff_delivery_rate_should_sign.should_sign_flag AGGREGATION
+25 D stats_date <- <constant> CONSTANT
+25 D time_efficient_name1 <- lbdb.dwd_oper_eff_delivery_rate_should_sign.time_efficient_name1 IDENTITY
+25 D time_efficient_name2 <- lbdb.dwd_oper_eff_delivery_rate_should_sign.time_efficient_name2 IDENTITY
+25 I lbdb.dwd_oper_eff_delivery_rate_should_sign.delivery_code x23
+25 I lbdb.dwd_oper_eff_delivery_rate_should_sign.delivery_name x23
+25 I lbdb.dwd_oper_eff_delivery_rate_should_sign.dest_first_site_code x23
+25 I lbdb.dwd_oper_eff_delivery_rate_should_sign.dest_first_site_name x23
+25 I lbdb.dwd_oper_eff_delivery_rate_should_sign.dest_site_code x23
+25 I lbdb.dwd_oper_eff_delivery_rate_should_sign.dest_site_name x23
+25 I lbdb.dwd_oper_eff_delivery_rate_should_sign.next_area_code x23
+25 I lbdb.dwd_oper_eff_delivery_rate_should_sign.next_area_name x23
+25 I lbdb.dwd_oper_eff_delivery_rate_should_sign.next_center_code x23
+25 I lbdb.dwd_oper_eff_delivery_rate_should_sign.next_center_name x23
+25 I lbdb.dwd_oper_eff_delivery_rate_should_sign.next_province_area_code x23
+25 I lbdb.dwd_oper_eff_delivery_rate_should_sign.next_province_area_name x23
+25 I lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_city_name x23
+25 I lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_district_name x23
+25 I lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_province_name x23
+25 I lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_street x23
+25 I lbdb.dwd_oper_eff_delivery_rate_should_sign.scan_time x23
+25 I lbdb.dwd_oper_eff_delivery_rate_should_sign.scan_time_0to0_last16_date x23
+25 I lbdb.dwd_oper_eff_delivery_rate_should_sign.time_efficient_name1 x23
+25 I lbdb.dwd_oper_eff_delivery_rate_should_sign.time_efficient_name2 x23
+25 N edges=485 direct=25
+26 T lbdb.dwd_oper_eff_delivery_rate_should_sign
+26 T lbdb.dws_oper_eff_delivery_rate_dest_site
+26 D day_sign_cnt <- lbdb.dwd_oper_eff_delivery_rate_should_sign.day_sign_flag AGGREGATION
+26 D dest_area_code <- lbdb.dwd_oper_eff_delivery_rate_should_sign.next_area_code IDENTITY
+26 D dest_area_name <- lbdb.dwd_oper_eff_delivery_rate_should_sign.next_area_name IDENTITY
+26 D dest_center_code <- lbdb.dwd_oper_eff_delivery_rate_should_sign.next_center_code IDENTITY
+26 D dest_center_name <- lbdb.dwd_oper_eff_delivery_rate_should_sign.next_center_name IDENTITY
+26 D dest_first_site_code <- lbdb.dwd_oper_eff_delivery_rate_should_sign.dest_first_site_code IDENTITY
+26 D dest_first_site_name <- lbdb.dwd_oper_eff_delivery_rate_should_sign.dest_first_site_name IDENTITY
+26 D dest_province_area_code <- lbdb.dwd_oper_eff_delivery_rate_should_sign.next_province_area_code IDENTITY
+26 D dest_province_area_name <- lbdb.dwd_oper_eff_delivery_rate_should_sign.next_province_area_name IDENTITY
+26 D dest_site_code <- lbdb.dwd_oper_eff_delivery_rate_should_sign.dest_site_code IDENTITY
+26 D dest_site_name <- lbdb.dwd_oper_eff_delivery_rate_should_sign.dest_site_name IDENTITY
+26 D district_to_center_distance_range <- lbdb.dwd_oper_eff_delivery_rate_should_sign.district_to_center_distance_range IDENTITY
+26 D district_to_street_distance_range <- lbdb.dwd_oper_eff_delivery_rate_should_sign.district_to_street_distance_range IDENTITY
+26 D etl_time <- <constant> CONSTANT
+26 D real_sign_cnt <- lbdb.dwd_oper_eff_delivery_rate_should_sign.day_sign_flag AGGREGATION
+26 D real_sign_cnt <- lbdb.dwd_oper_eff_delivery_rate_should_sign.next_province_area_name AGGREGATION
+26 D real_sign_cnt <- lbdb.dwd_oper_eff_delivery_rate_should_sign.real_sign_flag AGGREGATION
+26 D receiver_city_code <- lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_city_code IDENTITY
+26 D receiver_city_name <- lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_city_name IDENTITY
+26 D receiver_district_code <- lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_district_code IDENTITY
+26 D receiver_district_name <- lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_district_name IDENTITY
+26 D receiver_province_code <- lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_province_code IDENTITY
+26 D receiver_province_name <- lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_province_name IDENTITY
+26 D receiver_street <- lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_street IDENTITY
+26 D receiver_street_code <- lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_street_code IDENTITY
+26 D should_sign_cnt <- lbdb.dwd_oper_eff_delivery_rate_should_sign.should_sign_flag AGGREGATION
+26 D site_to_center_distance_range <- lbdb.dwd_oper_eff_delivery_rate_should_sign.site_to_center_distance_range IDENTITY
+26 D stats_date <- <constant> CONSTANT
+26 D time_efficient_name1 <- lbdb.dwd_oper_eff_delivery_rate_should_sign.time_efficient_name1 IDENTITY
+26 D time_efficient_name2 <- lbdb.dwd_oper_eff_delivery_rate_should_sign.time_efficient_name2 IDENTITY
+26 D weight_range <- lbdb.dwd_oper_eff_delivery_rate_should_sign.weight_range IDENTITY
+26 D weight_range_3300 <- lbdb.dwd_oper_eff_delivery_rate_should_sign.weight_range_3300 IDENTITY
+26 I lbdb.dwd_oper_eff_delivery_rate_should_sign.dest_first_site_code x30
+26 I lbdb.dwd_oper_eff_delivery_rate_should_sign.dest_first_site_name x30
+26 I lbdb.dwd_oper_eff_delivery_rate_should_sign.dest_site_code x30
+26 I lbdb.dwd_oper_eff_delivery_rate_should_sign.dest_site_name x30
+26 I lbdb.dwd_oper_eff_delivery_rate_should_sign.district_to_center_distance_range x30
+26 I lbdb.dwd_oper_eff_delivery_rate_should_sign.district_to_street_distance_range x30
+26 I lbdb.dwd_oper_eff_delivery_rate_should_sign.next_area_code x30
+26 I lbdb.dwd_oper_eff_delivery_rate_should_sign.next_area_name x30
+26 I lbdb.dwd_oper_eff_delivery_rate_should_sign.next_center_code x30
+26 I lbdb.dwd_oper_eff_delivery_rate_should_sign.next_center_name x30
+26 I lbdb.dwd_oper_eff_delivery_rate_should_sign.next_province_area_code x30
+26 I lbdb.dwd_oper_eff_delivery_rate_should_sign.next_province_area_name x30
+26 I lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_city_code x30
+26 I lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_city_name x30
+26 I lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_district_code x30
+26 I lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_district_name x30
+26 I lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_province_code x30
+26 I lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_province_name x30
+26 I lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_street x30
+26 I lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_street_code x30
+26 I lbdb.dwd_oper_eff_delivery_rate_should_sign.scan_time x30
+26 I lbdb.dwd_oper_eff_delivery_rate_should_sign.scan_time_0to0_last16_date x30
+26 I lbdb.dwd_oper_eff_delivery_rate_should_sign.site_to_center_distance_range x30
+26 I lbdb.dwd_oper_eff_delivery_rate_should_sign.time_efficient_name1 x30
+26 I lbdb.dwd_oper_eff_delivery_rate_should_sign.time_efficient_name2 x30
+26 I lbdb.dwd_oper_eff_delivery_rate_should_sign.weight_range x30
+26 I lbdb.dwd_oper_eff_delivery_rate_should_sign.weight_range_3300 x30
+26 N edges=842 direct=32
+27 T lbdb.dwd_oper_eff_delivery_rate_should_sign
+27 T lbdb.dws_oper_eff_delivery_rate
+27 D day_sign_cnt <- lbdb.dwd_oper_eff_delivery_rate_should_sign.day_sign_flag AGGREGATION
+27 D district_to_center_distance_range <- lbdb.dwd_oper_eff_delivery_rate_should_sign.district_to_center_distance_range IDENTITY
+27 D district_to_street_distance_range <- lbdb.dwd_oper_eff_delivery_rate_should_sign.district_to_street_distance_range IDENTITY
+27 D etl_time <- <constant> CONSTANT
+27 D next_area_code <- lbdb.dwd_oper_eff_delivery_rate_should_sign.next_area_code IDENTITY
+27 D next_area_name <- lbdb.dwd_oper_eff_delivery_rate_should_sign.next_area_name IDENTITY
+27 D next_center_code <- lbdb.dwd_oper_eff_delivery_rate_should_sign.next_center_code IDENTITY
+27 D next_center_name <- lbdb.dwd_oper_eff_delivery_rate_should_sign.next_center_name IDENTITY
+27 D next_first_site_code <- lbdb.dwd_oper_eff_delivery_rate_should_sign.next_first_site_code IDENTITY
+27 D next_first_site_name <- lbdb.dwd_oper_eff_delivery_rate_should_sign.next_first_site_name IDENTITY
+27 D next_parent_site_code <- lbdb.dwd_oper_eff_delivery_rate_should_sign.next_parent_site_code IDENTITY
+27 D next_parent_site_name <- lbdb.dwd_oper_eff_delivery_rate_should_sign.next_parent_site_name IDENTITY
+27 D next_province_area_code <- lbdb.dwd_oper_eff_delivery_rate_should_sign.next_province_area_code IDENTITY
+27 D next_province_area_name <- lbdb.dwd_oper_eff_delivery_rate_should_sign.next_province_area_name IDENTITY
+27 D next_site_code <- lbdb.dwd_oper_eff_delivery_rate_should_sign.next_site_code IDENTITY
+27 D next_site_name <- lbdb.dwd_oper_eff_delivery_rate_should_sign.next_site_name IDENTITY
+27 D real_sign_cnt <- lbdb.dwd_oper_eff_delivery_rate_should_sign.real_sign_flag AGGREGATION
+27 D receiver_city_code <- lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_city_code IDENTITY
+27 D receiver_city_name <- lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_city_name IDENTITY
+27 D receiver_district_code <- lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_district_code IDENTITY
+27 D receiver_district_name <- lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_district_name IDENTITY
+27 D receiver_province_code <- lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_province_code IDENTITY
+27 D receiver_province_name <- lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_province_name IDENTITY
+27 D receiver_street <- lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_street IDENTITY
+27 D receiver_street_code <- lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_street_code IDENTITY
+27 D should_sign_cnt <- lbdb.dwd_oper_eff_delivery_rate_should_sign.should_sign_flag AGGREGATION
+27 D site_to_center_distance_range <- lbdb.dwd_oper_eff_delivery_rate_should_sign.site_to_center_distance_range IDENTITY
+27 D stats_date <- <constant> CONSTANT
+27 D time_efficient_name1 <- lbdb.dwd_oper_eff_delivery_rate_should_sign.time_efficient_name1 IDENTITY
+27 D time_efficient_name2 <- lbdb.dwd_oper_eff_delivery_rate_should_sign.time_efficient_name2 IDENTITY
+27 D weight_range <- lbdb.dwd_oper_eff_delivery_rate_should_sign.weight_range IDENTITY
+27 D weight_range_3300 <- lbdb.dwd_oper_eff_delivery_rate_should_sign.weight_range_3300 IDENTITY
+27 I lbdb.dwd_oper_eff_delivery_rate_should_sign.district_to_center_distance_range x32
+27 I lbdb.dwd_oper_eff_delivery_rate_should_sign.district_to_street_distance_range x32
+27 I lbdb.dwd_oper_eff_delivery_rate_should_sign.next_area_code x32
+27 I lbdb.dwd_oper_eff_delivery_rate_should_sign.next_area_name x32
+27 I lbdb.dwd_oper_eff_delivery_rate_should_sign.next_center_code x32
+27 I lbdb.dwd_oper_eff_delivery_rate_should_sign.next_center_name x32
+27 I lbdb.dwd_oper_eff_delivery_rate_should_sign.next_first_site_code x32
+27 I lbdb.dwd_oper_eff_delivery_rate_should_sign.next_first_site_name x32
+27 I lbdb.dwd_oper_eff_delivery_rate_should_sign.next_parent_site_code x32
+27 I lbdb.dwd_oper_eff_delivery_rate_should_sign.next_parent_site_name x32
+27 I lbdb.dwd_oper_eff_delivery_rate_should_sign.next_province_area_code x32
+27 I lbdb.dwd_oper_eff_delivery_rate_should_sign.next_province_area_name x32
+27 I lbdb.dwd_oper_eff_delivery_rate_should_sign.next_site_code x32
+27 I lbdb.dwd_oper_eff_delivery_rate_should_sign.next_site_name x32
+27 I lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_city_code x32
+27 I lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_city_name x32
+27 I lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_district_code x32
+27 I lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_district_name x32
+27 I lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_province_code x32
+27 I lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_province_name x32
+27 I lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_street x32
+27 I lbdb.dwd_oper_eff_delivery_rate_should_sign.receiver_street_code x32
+27 I lbdb.dwd_oper_eff_delivery_rate_should_sign.scan_time x32
+27 I lbdb.dwd_oper_eff_delivery_rate_should_sign.scan_time_0to0_last16_date x32
+27 I lbdb.dwd_oper_eff_delivery_rate_should_sign.site_to_center_distance_range x32
+27 I lbdb.dwd_oper_eff_delivery_rate_should_sign.time_efficient_name1 x32
+27 I lbdb.dwd_oper_eff_delivery_rate_should_sign.time_efficient_name2 x32
+27 I lbdb.dwd_oper_eff_delivery_rate_should_sign.weight_range x32
+27 I lbdb.dwd_oper_eff_delivery_rate_should_sign.weight_range_3300 x32
+27 N edges=960 direct=32
+28 T lbdb.dwd_oper_eff_delivery_rate_next_site
+28 T lbdb.dwd_oper_eff_delivery_rate_should_sign
+28 T lbdb.dwd_oper_eff_delivery_rate_waybill_change
+28 T lbdb.tx_bd_site_info
+28 D calc_weight <- lbdb.dwd_oper_eff_delivery_rate_next_site.calc_weight IDENTITY
+28 D center_arrive_id <- lbdb.dwd_oper_eff_delivery_rate_next_site.center_arrive_id IDENTITY
+28 D day_sign_flag <- lbdb.dwd_oper_eff_delivery_rate_next_site.is_sign EXPRESSION
+28 D day_sign_flag <- lbdb.dwd_oper_eff_delivery_rate_next_site.must_clock_time EXPRESSION
+28 D day_sign_flag <- lbdb.dwd_oper_eff_delivery_rate_next_site.scan_time EXPRESSION
+28 D day_sign_flag <- lbdb.dwd_oper_eff_delivery_rate_next_site.sign_time EXPRESSION
+28 D delivery_code <- lbdb.dwd_oper_eff_delivery_rate_next_site.delivery_code IDENTITY
+28 D delivery_name <- lbdb.dwd_oper_eff_delivery_rate_next_site.delivery_name IDENTITY
+28 D delivery_site_code <- lbdb.dwd_oper_eff_delivery_rate_next_site.delivery_site_code IDENTITY
+28 D dest_first_site_code <- lbdb.tx_bd_site_info.site_code IDENTITY
+28 D dest_first_site_name <- lbdb.tx_bd_site_info.site_name IDENTITY
+28 D dest_site_code <- lbdb.dwd_oper_eff_delivery_rate_next_site.dest_site_code IDENTITY
+28 D dest_site_name <- lbdb.tx_bd_site_info.site_name IDENTITY
+28 D district_to_center_distance <- lbdb.dwd_oper_eff_delivery_rate_next_site.district_to_center_distance IDENTITY
+28 D district_to_center_distance_range <- lbdb.dwd_oper_eff_delivery_rate_next_site.district_to_center_distance_range IDENTITY
+28 D district_to_street_distance <- lbdb.dwd_oper_eff_delivery_rate_next_site.district_to_street_distance IDENTITY
+28 D district_to_street_distance_range <- lbdb.dwd_oper_eff_delivery_rate_next_site.district_to_street_distance_range IDENTITY
+28 D etl_time <- <constant> CONSTANT
+28 D is_change_waybill <- lbdb.dwd_oper_eff_delivery_rate_next_site.is_change_waybill IDENTITY
+28 D must_clock_time <- lbdb.dwd_oper_eff_delivery_rate_next_site.must_clock_time IDENTITY
+28 D next_area_code <- lbdb.dwd_oper_eff_delivery_rate_next_site.next_area_code IDENTITY
+28 D next_area_name <- lbdb.dwd_oper_eff_delivery_rate_next_site.next_area_name IDENTITY
+28 D next_center_code <- lbdb.dwd_oper_eff_delivery_rate_next_site.next_center_code IDENTITY
+28 D next_center_name <- lbdb.dwd_oper_eff_delivery_rate_next_site.next_center_name IDENTITY
+28 D next_first_site_code <- lbdb.dwd_oper_eff_delivery_rate_next_site.next_first_site_code IDENTITY
+28 D next_first_site_name <- lbdb.dwd_oper_eff_delivery_rate_next_site.next_first_site_name IDENTITY
+28 D next_parent_site_code <- lbdb.dwd_oper_eff_delivery_rate_next_site.next_parent_site_code IDENTITY
+28 D next_parent_site_name <- lbdb.dwd_oper_eff_delivery_rate_next_site.next_parent_site_name IDENTITY
+28 D next_province_area_code <- lbdb.dwd_oper_eff_delivery_rate_next_site.next_province_area_code IDENTITY
+28 D next_province_area_name <- lbdb.dwd_oper_eff_delivery_rate_next_site.next_province_area_name IDENTITY
+28 D next_site_code <- lbdb.dwd_oper_eff_delivery_rate_next_site.next_site_code IDENTITY
+28 D next_site_name <- lbdb.dwd_oper_eff_delivery_rate_next_site.next_site_name IDENTITY
+28 D product_type_code <- lbdb.dwd_oper_eff_delivery_rate_next_site.product_type_code IDENTITY
+28 D real_sign_flag <- lbdb.dwd_oper_eff_delivery_rate_next_site.is_sign EXPRESSION
+28 D real_sign_flag <- lbdb.dwd_oper_eff_delivery_rate_next_site.must_clock_time EXPRESSION
+28 D real_sign_flag <- lbdb.dwd_oper_eff_delivery_rate_next_site.real_sign EXPRESSION
+28 D real_sign_flag <- lbdb.dwd_oper_eff_delivery_rate_next_site.scan_time EXPRESSION
+28 D real_sign_flag <- lbdb.dwd_oper_eff_delivery_rate_next_site.sign_time EXPRESSION
+28 D receiver_address <- lbdb.dwd_oper_eff_delivery_rate_next_site.receiver_address IDENTITY
+28 D receiver_city_code <- lbdb.dwd_oper_eff_delivery_rate_next_site.receiver_city_code IDENTITY
+28 D receiver_city_name <- lbdb.dwd_oper_eff_delivery_rate_next_site.receiver_city_name IDENTITY
+28 D receiver_district_code <- lbdb.dwd_oper_eff_delivery_rate_next_site.receiver_district_code IDENTITY
+28 D receiver_district_name <- lbdb.dwd_oper_eff_delivery_rate_next_site.receiver_district_name IDENTITY
+28 D receiver_province_code <- lbdb.dwd_oper_eff_delivery_rate_next_site.receiver_province_code IDENTITY
+28 D receiver_province_name <- lbdb.dwd_oper_eff_delivery_rate_next_site.receiver_province_name IDENTITY
+28 D receiver_street <- lbdb.dwd_oper_eff_delivery_rate_next_site.receiver_street IDENTITY
+28 D receiver_street_code <- lbdb.dwd_oper_eff_delivery_rate_next_site.receiver_street_code IDENTITY
+28 D scan_site_code <- lbdb.dwd_oper_eff_delivery_rate_next_site.scan_site_code IDENTITY
+28 D scan_time <- lbdb.dwd_oper_eff_delivery_rate_next_site.scan_time IDENTITY
+28 D scan_time_0to0_last16_date <- lbdb.dwd_oper_eff_delivery_rate_next_site.scan_time_0to0_last16_date IDENTITY
+28 D should_sign_flag <- lbdb.dwd_oper_eff_delivery_rate_next_site.must_clock_time EXPRESSION
+28 D should_sign_flag <- lbdb.dwd_oper_eff_delivery_rate_next_site.scan_time EXPRESSION
+28 D should_sign_flag <- lbdb.dwd_oper_eff_delivery_rate_next_site.sign_time EXPRESSION
+28 D sign_time <- lbdb.dwd_oper_eff_delivery_rate_next_site.sign_time IDENTITY
+28 D site_to_center_distance <- lbdb.dwd_oper_eff_delivery_rate_next_site.site_to_center_distance IDENTITY
+28 D site_to_center_distance_range <- lbdb.dwd_oper_eff_delivery_rate_next_site.site_to_center_distance_range IDENTITY
+28 D time_efficient <- lbdb.dwd_oper_eff_delivery_rate_next_site.time_efficient IDENTITY
+28 D time_efficient_name1 <- lbdb.dwd_oper_eff_delivery_rate_next_site.time_efficient_name1 IDENTITY
+28 D time_efficient_name2 <- lbdb.dwd_oper_eff_delivery_rate_next_site.time_efficient_name2 IDENTITY
+28 D waybill_no <- lbdb.dwd_oper_eff_delivery_rate_next_site.waybill_no IDENTITY
+28 D weight_range <- lbdb.dwd_oper_eff_delivery_rate_next_site.weight_range IDENTITY
+28 D weight_range_3300 <- lbdb.dwd_oper_eff_delivery_rate_next_site.weight_range_3300 IDENTITY
+28 I lbdb.dwd_oper_eff_delivery_rate_next_site.dest_site_code x53
+28 I lbdb.dwd_oper_eff_delivery_rate_next_site.must_clock_time x53
+28 I lbdb.dwd_oper_eff_delivery_rate_next_site.scan_time x53
+28 I lbdb.dwd_oper_eff_delivery_rate_next_site.scan_time_0to0_last16_date x53
+28 I lbdb.dwd_oper_eff_delivery_rate_next_site.sign_time x53
+28 I lbdb.dwd_oper_eff_delivery_rate_next_site.waybill_no x53
+28 I lbdb.dwd_oper_eff_delivery_rate_should_sign.scan_time x53
+28 I lbdb.dwd_oper_eff_delivery_rate_should_sign.scan_time_0to0_last16_date x53
+28 I lbdb.dwd_oper_eff_delivery_rate_should_sign.waybill_no x53
+28 I lbdb.dwd_oper_eff_delivery_rate_waybill_change.operate_site_code x53
+28 I lbdb.dwd_oper_eff_delivery_rate_waybill_change.scan_time x53
+28 I lbdb.dwd_oper_eff_delivery_rate_waybill_change.scan_time_0to0_last16_date x53
+28 I lbdb.dwd_oper_eff_delivery_rate_waybill_change.waybill_no x53
+28 I lbdb.tx_bd_site_info.first_site_code x53
+28 I lbdb.tx_bd_site_info.site_code x53
+28 N edges=857 direct=62
+29 T lbdb.dwd_oper_eff_delivery_rate_next_site
+29 T lbdb.dwd_oper_eff_delivery_rate_waybill_change
+29 T lbdb.ods_tx_tx_waybill_operate_record_1y
+29 D center_arrive_id <- lbdb.dwd_oper_eff_delivery_rate_next_site.center_arrive_id IDENTITY
+29 D change_type <- <constant> CONSTANT
+29 D etl_time <- <constant> CONSTANT
+29 D operate_content <- lbdb.ods_tx_tx_waybill_operate_record_1y.operate_content IDENTITY
+29 D operate_site_code <- lbdb.ods_tx_tx_waybill_operate_record_1y.operate_site_code IDENTITY
+29 D operate_time <- lbdb.ods_tx_tx_waybill_operate_record_1y.operate_time IDENTITY
+29 D scan_site_code <- lbdb.dwd_oper_eff_delivery_rate_next_site.scan_site_code IDENTITY
+29 D scan_time <- lbdb.dwd_oper_eff_delivery_rate_next_site.scan_time IDENTITY
+29 D scan_time_0to0_last16_date <- lbdb.dwd_oper_eff_delivery_rate_next_site.scan_time_0to0_last16_date IDENTITY
+29 D waybill_no <- lbdb.dwd_oper_eff_delivery_rate_next_site.waybill_no IDENTITY
+29 I lbdb.dwd_oper_eff_delivery_rate_next_site.must_clock_time x10
+29 I lbdb.dwd_oper_eff_delivery_rate_next_site.scan_time x10
+29 I lbdb.dwd_oper_eff_delivery_rate_next_site.scan_time_0to0_last16_date x10
+29 I lbdb.dwd_oper_eff_delivery_rate_next_site.sign_time x10
+29 I lbdb.dwd_oper_eff_delivery_rate_next_site.waybill_no x10
+29 I lbdb.ods_tx_tx_waybill_operate_record_1y.create_time x10
+29 I lbdb.ods_tx_tx_waybill_operate_record_1y.data_valid x10
+29 I lbdb.ods_tx_tx_waybill_operate_record_1y.operate_content x10
+29 I lbdb.ods_tx_tx_waybill_operate_record_1y.operate_time x10
+29 I lbdb.ods_tx_tx_waybill_operate_record_1y.operate_type x10
+29 I lbdb.ods_tx_tx_waybill_operate_record_1y.waybill_no x10
+29 N edges=120 direct=10
+30 T lbdb.dim_site_clock_maintain_s_d
+30 T lbdb.dwd_oper_eff_delivery_rate_next_site
+30 T lbdb.dwd_oper_eff_delivery_rate_waybill_change
+30 T lbdb.ods_tx_tx_bd_site_to_county_distance_f_d
+30 T lbdb.ods_tx_tx_oper_site_sign_1y
+30 T lbdb.tb_base_time_efficient
+30 T lbdb.tx_bd_site_info
+30 T lbdb.tx_oper_center_reach
+30 T lbdb.tx_site_delivery_distance
+30 T lbdb.tx_waybill_info_ext
+30 D calc_weight <- lbdb.tx_waybill_info_ext.calc_weight IDENTITY
+30 D center_arrive_id <- lbdb.tx_oper_center_reach.center_arrive_id IDENTITY
+30 D delivery_code <- lbdb.ods_tx_tx_oper_site_sign_1y.delivery_code EXPRESSION
+30 D delivery_name <- lbdb.ods_tx_tx_oper_site_sign_1y.delivery_name EXPRESSION
+30 D delivery_site_code <- lbdb.ods_tx_tx_oper_site_sign_1y.delivery_site_code IDENTITY
+30 D dest_site_code <- lbdb.tx_oper_center_reach.dest_site_code IDENTITY
+30 D district_to_center_distance <- lbdb.ods_tx_tx_bd_site_to_county_distance_f_d.site_to_county_distance EXPRESSION
+30 D district_to_center_distance_range <- lbdb.ods_tx_tx_bd_site_to_county_distance_f_d.site_to_county_distance EXPRESSION
+30 D district_to_street_distance <- lbdb.ods_tx_tx_bd_site_to_county_distance_f_d.site_to_county_distance EXPRESSION
+30 D district_to_street_distance_range <- lbdb.ods_tx_tx_bd_site_to_county_distance_f_d.site_to_county_distance EXPRESSION
+30 D etl_time <- <constant> CONSTANT
+30 D is_change_waybill <- <constant> CONSTANT
+30 D is_sign <- lbdb.ods_tx_tx_oper_site_sign_1y.sign_status EXPRESSION
+30 D is_sign <- lbdb.ods_tx_tx_oper_site_sign_1y.sign_time EXPRESSION
+30 D must_clock_time <- lbdb.dim_site_clock_maintain_s_d.must_clock_time EXPRESSION
+30 D must_clock_time <- lbdb.tx_bd_site_info.site_type_code EXPRESSION
+30 D next_area_code <- lbdb.tx_bd_site_info.area_code IDENTITY
+30 D next_area_name <- lbdb.tx_bd_site_info.area_name IDENTITY
+30 D next_center_code <- lbdb.tx_bd_site_info.center_code IDENTITY
+30 D next_center_name <- lbdb.tx_bd_site_info.center_name IDENTITY
+30 D next_first_site_code <- lbdb.tx_bd_site_info.first_site_code IDENTITY
+30 D next_first_site_name <- lbdb.tx_bd_site_info.site_name IDENTITY
+30 D next_parent_site_code <- lbdb.tx_bd_site_info.parent_site_code IDENTITY
+30 D next_parent_site_name <- lbdb.tx_bd_site_info.site_name EXPRESSION
+30 D next_province_area_code <- lbdb.tx_bd_site_info.province_area_code IDENTITY
+30 D next_province_area_name <- lbdb.tx_bd_site_info.province_area_name IDENTITY
+30 D next_site_code <- lbdb.dim_site_clock_maintain_s_d.must_clock_time EXPRESSION
+30 D next_site_code <- lbdb.tx_bd_site_info.site_code EXPRESSION
+30 D next_site_code <- lbdb.tx_bd_site_info.site_type_code EXPRESSION
+30 D next_site_code <- lbdb.tx_oper_center_reach.dest_site_code EXPRESSION
+30 D next_site_name <- lbdb.tx_bd_site_info.site_name IDENTITY
+30 D product_type_code <- lbdb.tx_oper_center_reach.product_type_code IDENTITY
+30 D real_sign <- lbdb.ods_tx_tx_oper_site_sign_1y.real_sign IDENTITY
+30 D receiver_address <- lbdb.tx_waybill_info_ext.receiver_address EXPRESSION
+30 D receiver_city_code <- lbdb.tx_waybill_info_ext.receiver_city_code EXPRESSION
+30 D receiver_city_name <- lbdb.tx_waybill_info_ext.receiver_city_name EXPRESSION
+30 D receiver_district_code <- lbdb.tx_waybill_info_ext.receiver_district_code EXPRESSION
+30 D receiver_district_name <- lbdb.tx_waybill_info_ext.receiver_district_name EXPRESSION
+30 D receiver_province_code <- lbdb.tx_waybill_info_ext.receiver_province_code EXPRESSION
+30 D receiver_province_name <- lbdb.tx_waybill_info_ext.receiver_province_name EXPRESSION
+30 D receiver_street <- lbdb.tx_waybill_info_ext.receiver_street EXPRESSION
+30 D receiver_street_code <- lbdb.tx_waybill_info_ext.receiver_street_code EXPRESSION
+30 D scan_site_code <- lbdb.tx_oper_center_reach.scan_site_code IDENTITY
+30 D scan_time <- lbdb.tx_oper_center_reach.scan_time IDENTITY
+30 D scan_time_0to0_last16_date <- <constant> CONSTANT
+30 D sign_status <- lbdb.ods_tx_tx_oper_site_sign_1y.sign_status IDENTITY
+30 D sign_time <- lbdb.ods_tx_tx_oper_site_sign_1y.sign_time EXPRESSION
+30 D site_to_center_distance <- lbdb.tx_site_delivery_distance.distance IDENTITY
+30 D site_to_center_distance_range <- lbdb.tx_site_delivery_distance.distance EXPRESSION
+30 D time_efficient <- lbdb.tb_base_time_efficient.time_efficient IDENTITY
+30 D time_efficient_name1 <- lbdb.tb_base_time_efficient.time_efficient EXPRESSION
+30 D time_efficient_name2 <- lbdb.tb_base_time_efficient.time_efficient EXPRESSION
+30 D waybill_no <- lbdb.tx_waybill_info_ext.waybill_no IDENTITY
+30 D weight_range <- lbdb.tx_waybill_info_ext.weight_range EXPRESSION
+30 D weight_range_3300 <- lbdb.tx_waybill_info_ext.calc_weight EXPRESSION
+30 I lbdb.dim_site_clock_maintain_s_d.classes x50
+30 I lbdb.dim_site_clock_maintain_s_d.clock_type x50
+30 I lbdb.dim_site_clock_maintain_s_d.data_valid x50
+30 I lbdb.dim_site_clock_maintain_s_d.dt x50
+30 I lbdb.dim_site_clock_maintain_s_d.must_clock_time x50
+30 I lbdb.dim_site_clock_maintain_s_d.scan_site_code x50
+30 I lbdb.dim_site_clock_maintain_s_d.site_code x50
+30 I lbdb.dwd_oper_eff_delivery_rate_waybill_change.scan_time_0to0_last16_date x50
+30 I lbdb.dwd_oper_eff_delivery_rate_waybill_change.waybill_no x50
+30 I lbdb.ods_tx_tx_bd_site_to_county_distance_f_d.county_code x50
+30 I lbdb.ods_tx_tx_bd_site_to_county_distance_f_d.site_code x50
+30 I lbdb.ods_tx_tx_bd_site_to_county_distance_f_d.update_time x50
+30 I lbdb.ods_tx_tx_oper_site_sign_1y.create_time x50
+30 I lbdb.ods_tx_tx_oper_site_sign_1y.sign_time x50
+30 I lbdb.ods_tx_tx_oper_site_sign_1y.update_time x50
+30 I lbdb.ods_tx_tx_oper_site_sign_1y.waybill_no x50
+30 I lbdb.tb_base_time_efficient.city_name x50
+30 I lbdb.tb_base_time_efficient.district_name x50
+30 I lbdb.tb_base_time_efficient.is_deleted x50
+30 I lbdb.tb_base_time_efficient.province_name x50
+30 I lbdb.tb_base_time_efficient.street_name x50
+30 I lbdb.tx_bd_site_info.first_site_code x50
+30 I lbdb.tx_bd_site_info.parent_site_code x50
+30 I lbdb.tx_bd_site_info.send_center_code x50
+30 I lbdb.tx_bd_site_info.site_bind x50
+30 I lbdb.tx_bd_site_info.site_code x50
+30 I lbdb.tx_bd_site_info.site_type_code x50
+30 I lbdb.tx_oper_center_reach.create_time x50
+30 I lbdb.tx_oper_center_reach.dest_center_code x50
+30 I lbdb.tx_oper_center_reach.dest_site_code x50
+30 I lbdb.tx_oper_center_reach.next_site_code x50
+30 I lbdb.tx_oper_center_reach.scan_site_code x50
+30 I lbdb.tx_oper_center_reach.scan_time x50
+30 I lbdb.tx_oper_center_reach.scan_type x50
+30 I lbdb.tx_oper_center_reach.waybill_no x50
+30 I lbdb.tx_site_delivery_distance.center_code x50
+30 I lbdb.tx_site_delivery_distance.site_code x50
+30 I lbdb.tx_site_delivery_distance.update_time x50
+30 I lbdb.tx_waybill_info_ext.delivery_type_code x50
+30 I lbdb.tx_waybill_info_ext.receiver_city_name x50
+30 I lbdb.tx_waybill_info_ext.receiver_district_code x50
+30 I lbdb.tx_waybill_info_ext.receiver_district_name x50
+30 I lbdb.tx_waybill_info_ext.receiver_province_name x50
+30 I lbdb.tx_waybill_info_ext.receiver_street x50
+30 I lbdb.tx_waybill_info_ext.receiver_street_code x50
+30 I lbdb.tx_waybill_info_ext.send_date_9to9_date x50
+30 I lbdb.tx_waybill_info_ext.waybill_no x50
+30 N edges=2405 direct=55

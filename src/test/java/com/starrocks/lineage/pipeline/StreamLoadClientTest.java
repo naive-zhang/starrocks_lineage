@@ -176,4 +176,72 @@ class StreamLoadClientTest {
         StarRocksSink sink = new StarRocksSink(ds, client, "audit_lineage_db", "p");
         assertEquals("0123abcd_usage", sink.label("0123abcd", "usage"));
     }
+
+    // ------------------------------------------------------------------------------------------------ routing
+
+    /**
+     * Found with the production statements on 3.1.17: the FE answers 307 without reading the body and closes the
+     * connection, so a 13 MB lineage load failed with "Broken pipe". The body must never travel to an FE.
+     */
+    @Test
+    void theBodyNeverTravelsToTheFe() {
+        StreamLoadClient.Result r = client.load("audit_lineage_db", "audit_user_dict", "big_dict",
+                StarRocksSink.DICT_COLUMNS, rows("a", "b", "c"));
+        assertEquals(3, r.getLoadedRows());
+        assertEquals(java.util.Collections.singletonList("big_dict_route:0"), sr.feRequests,
+                "one body-less probe under its own label; the real label and the body went to the BE only");
+        assertEquals("big_dict", sr.loads.get(0).label);
+        assertEquals(StreamLoadClient.LoadState.UNKNOWN, client.loadState("audit_lineage_db", "big_dict_route"),
+                "the FE redirect starts no transaction");
+    }
+
+    /** A follower FE redirects to the leader, which hangs up on the body: probe the leader, then load on the BE. */
+    @Test
+    void aFollowerFeChainIsResolvedWithoutSendingTheBodyTwice() throws Exception {
+        try (StreamLoadClient viaFollower = new StreamLoadClient(sr.followerUrl(), FakeStarRocks.USER,
+                FakeStarRocks.PASSWORD, Duration.ofSeconds(30))) {
+            StreamLoadClient.Result r = viaFollower.load("audit_lineage_db", "audit_user_dict", "chain_dict",
+                    StarRocksSink.DICT_COLUMNS, rows("a"));
+            assertEquals(1, r.getLoadedRows());
+        }
+        assertEquals(1, sr.loads.size());
+        assertTrue(sr.feRequests.contains("chain_dict_route:0"), "the leader was probed: " + sr.feRequests);
+        sr.feHangsUpOnBody = false;
+        try (StreamLoadClient viaFollower = new StreamLoadClient(sr.followerUrl(), FakeStarRocks.USER,
+                FakeStarRocks.PASSWORD, Duration.ofSeconds(30))) {
+            assertEquals(1, viaFollower.load("audit_lineage_db", "audit_user_dict", "chain_dict2",
+                    StarRocksSink.DICT_COLUMNS, rows("b")).getLoadedRows(), "an FE that does answer 307 is followed");
+        }
+    }
+
+    /** A URL that points at a BE directly: the probe runs there as an empty load under its own label only. */
+    @Test
+    void aDirectBeUrlNeverConsumesTheRealLabelWithTheProbe() throws Exception {
+        for (boolean emptyLoadAsError : new boolean[]{true, false}) {
+            sr.emptyLoadAsError = emptyLoadAsError;
+            String label = "direct_" + emptyLoadAsError;
+            try (StreamLoadClient direct = new StreamLoadClient(sr.beUrl(), FakeStarRocks.USER,
+                    FakeStarRocks.PASSWORD, Duration.ofSeconds(30))) {
+                StreamLoadClient.Result r = direct.load("audit_lineage_db", "audit_user_dict", label,
+                        StarRocksSink.DICT_COLUMNS, rows("a", "b"));
+                assertFalse(r.isAlreadyLoaded(), "empty_load_as_error=" + emptyLoadAsError);
+                assertEquals(2, r.getLoadedRows());
+            }
+            assertEquals(StreamLoadClient.LoadState.COMMITTED, client.loadState("audit_lineage_db", label));
+        }
+        assertEquals(StreamLoadClient.LoadState.ABORTED, client.loadState("audit_lineage_db", "direct_true_route"));
+    }
+
+    @Test
+    void anUnreachableFeIsARetryableFailure() {
+        try (StreamLoadClient nowhere = new StreamLoadClient(URI.create("http://127.0.0.1:1"), "u", "p",
+                Duration.ofSeconds(5))) {
+            PipelineException e = assertThrows(PipelineException.class, () -> nowhere.load("db", "t", "l", "c",
+                    "[]".getBytes(StandardCharsets.UTF_8)));
+            assertTrue(e.isRetryable());
+            assertTrue(e.getMessage().contains("unreachable"), e.getMessage());
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException(e);
+        }
+    }
 }

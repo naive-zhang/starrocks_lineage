@@ -24,7 +24,10 @@ import java.util.function.Predicate;
 /**
  * HTTP test double of a StarRocks 3.1 FE / BE pair, with the behaviour verified on a real 3.1.17 container:
  * <ul>
- *   <li>the FE answers a Stream Load with {@code 307} to the BE;</li>
+ *   <li>the FE (its own port) requires {@code Expect: 100-continue}, answers a Stream Load with {@code 307} to the BE
+ *       (another port) and hangs up when a body arrives instead of reading it ({@link #feHangsUpOnBody}); a follower
+ *       FE redirects to the leader;</li>
+ *   <li>an empty load fails without consuming its label ({@link #emptyLoadAsError});</li>
  *   <li>the BE enforces Basic auth and {@code Expect: 100-continue}, and label uniqueness ("Label Already Exists");</li>
  *   <li>rows matching {@link #rejectRow} are data-quality errors: without {@code max_filter_ratio} the load fails
  *       ({@code NumberFilteredRows > 0}) and the label stays free; with {@code max_filter_ratio: 1} the other rows
@@ -39,6 +42,17 @@ final class FakeStarRocks implements AutoCloseable {
     static final String PASSWORD = "secret";
 
     final HttpServer server;
+    final HttpServer beServer;
+    final HttpServer followerServer;
+    /** Every request the FE received for a stream load: {@code label} and body bytes declared. */
+    final List<String> feRequests = Collections.synchronizedList(new ArrayList<>());
+    /**
+     * The real 3.1 FE answers 307 without reading the body and closes the connection; a large body then fails with
+     * "Broken pipe". The fake hangs up without any response as soon as a body arrives, which a client must survive.
+     */
+    volatile boolean feHangsUpOnBody = true;
+    /** FE config {@code empty_load_as_error} (true by default): an empty load fails and its label stays free. */
+    volatile boolean emptyLoadAsError = true;
     private final ObjectMapper json = new ObjectMapper();
     private final Set<String> labels = Collections.synchronizedSet(new HashSet<>());
     final java.util.Map<String, String> labelStates = Collections.synchronizedMap(new java.util.HashMap<>());
@@ -49,12 +63,26 @@ final class FakeStarRocks implements AutoCloseable {
     FakeStarRocks() throws IOException {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/api/", this::fe);
-        server.createContext("/be/", this::be);
         server.start();
+        beServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        beServer.createContext("/api/", this::be);
+        beServer.start();
+        followerServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        followerServer.createContext("/api/", ex -> redirect(ex, feUrl()));
+        followerServer.start();
     }
 
     URI feUrl() {
         return URI.create("http://127.0.0.1:" + server.getAddress().getPort());
+    }
+
+    URI beUrl() {
+        return URI.create("http://127.0.0.1:" + beServer.getAddress().getPort());
+    }
+
+    /** A follower FE: redirects stream loads to the leader ({@link #feUrl()}), like a 3.1 follower. */
+    URI followerUrl() {
+        return URI.create("http://127.0.0.1:" + followerServer.getAddress().getPort());
     }
 
     StreamLoadClient client() {
@@ -78,7 +106,27 @@ final class FakeStarRocks implements AutoCloseable {
             reply(ex, 200, "{\"state\":\"" + state + "\",\"status\":\"OK\",\"msg\":\"Success\"}");
             return;
         }
-        ex.getResponseHeaders().add("Location", "/be" + ex.getRequestURI().getPath());
+        redirect(ex, beUrl());
+    }
+
+    /** FE behaviour of a stream load request: 100-continue required, redirect, never reads a body. */
+    private void redirect(HttpExchange ex, URI to) throws IOException {
+        String length = ex.getRequestHeaders().getFirst("Content-Length");
+        long bodyBytes = length == null ? -1 : Long.parseLong(length);
+        if (ex.getHttpContext().getServer() == server) {
+            feRequests.add(ex.getRequestHeaders().getFirst("label") + ":" + bodyBytes);
+        }
+        if (!"100-continue".equalsIgnoreCase(ex.getRequestHeaders().getFirst("Expect"))) {
+            drain(ex.getRequestBody());
+            reply(ex, 200, "{\"Status\":\"FAILED\",\"Message\":\"There is no 100-continue header\"}");
+            return;
+        }
+        if (bodyBytes > 0 && feHangsUpOnBody) {
+            ex.close();
+            return;
+        }
+        drain(ex.getRequestBody());
+        ex.getResponseHeaders().add("Location", to.resolve(ex.getRequestURI().getPath()).toString());
         ex.sendResponseHeaders(307, -1);
         ex.close();
     }
@@ -109,6 +157,17 @@ final class FakeStarRocks implements AutoCloseable {
         }
         if (labels.contains(label)) {
             reply(ex, 200, "{\"Status\":\"Label Already Exists\",\"ExistingJobStatus\":\"FINISHED\"}");
+            return;
+        }
+        if (body.length == 0) {
+            if (emptyLoadAsError) {
+                labelStates.put(label, "ABORTED");
+                reply(ex, 200, "{\"Status\":\"Fail\",\"Message\":\"No partitions have data available for "
+                        + "loading\"}");
+            } else {
+                labels.add(label);
+                reply(ex, 200, "{\"Status\":\"Success\",\"NumberLoadedRows\":0}");
+            }
             return;
         }
         JsonNode rows = json.readTree(body);
@@ -155,6 +214,8 @@ final class FakeStarRocks implements AutoCloseable {
     @Override
     public void close() {
         server.stop(0);
+        beServer.stop(0);
+        followerServer.stop(0);
     }
 
     /** One accepted stream load. */

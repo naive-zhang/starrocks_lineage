@@ -1,7 +1,7 @@
 # 真实 StarRocks 3.1 容器验证（Testcontainers）
 
 ```bash
-mvn verify -Pit        # 单元测试 332 个 + 容器集成测试 44 个；需要 Docker，没有 Docker 时自动跳过 IT
+mvn verify -Pit        # 单元测试 462 个 + 容器集成测试 46 个；需要 Docker，没有 Docker 时自动跳过 IT
 mvn test               # 只跑单元测试（不依赖 Docker）
 ```
 
@@ -18,6 +18,7 @@ mvn test               # 只跑单元测试（不依赖 Docker）
 | `StarRocksStorageIT` | 11 | 经 FE 重定向的 Stream Load、标签幂等与 `get_load_state`（VISIBLE / UNKNOWN）；真实的被拒行：严格导入失败后标签不被占用，同标签容错导入保留其余行，sink 写 `LOAD_FILTERED` 死信；63 位用户 id 的位图 UV（同小时 3、跨小时 4）与 Q5 解码；日事实 + 血缘刷新（生成的 SQL 原样执行），重放、重建、边删除；死信往返（含 1 MB 语句和中文）；批次日志；检查点步骤、隔离与提交；成员 JOIN / SEMI / ANTI JOIN 与审计保留期核对 |
 | `AnalyzerDifferentialIT` | 21 | 8 个验收用例的 SQL 都能在 3.1 上**执行**，用真实元数据分析得到相同的血缘边；12 种查询形态下分析器推导的列名与引擎为视图生成的列名**完全一致**；`JOIN USING` 下的 `*` 与引擎结果集一致（13 列）；元数据提供者使用真实 `information_schema`，包括表名大小写、ALTER 之后的缓存失效 |
 | `PipelineEndToEndIT` | 7 | 全真实组件：首次运行跨越昨天和今天；在每个写入步骤之后"杀进程"再恢复，快照逐字段不变；标签过保留期时 BLOCKED，`redo` 后精确一次；中断期间到达的审计行进入 LATE 批次；暂停的实例被隔离、接管者完成批次；死信在补齐表结构后修复；被篡改的历史日期经重建（中途崩溃后恢复）精确还原 |
+| `ProductionInsertsIT` | 2 | 用生产 DDL 建出被引用的 67 张表，**执行 30 条生产 INSERT**；用真实 `information_schema` 解析出的血缘与评审后的快照逐行一致；30 条语句走完整 Pipeline，一次写入 17,756 条血缘（13.4 MB，经 FE），没有死信（见 `docs/stage6-production-inserts.md`） |
 | `SmokeRunbookIT` | 1 | 按 `docs/staging-smoke-test.md` 逐步演练，使用低权限账号与原始脚本，并通过子进程调用 jshell（包括 `smoke-ops.jsh`） |
 
 ## 只有真实引擎才能发现的问题（均已修复）
@@ -35,10 +36,11 @@ mvn test               # 只跑单元测试（不依赖 Docker）
 | S5-07 | 主要 | 意外异常被当作不可重试，"进程被杀"变成了 BLOCKED 而不是重试 | 只有已知会以相同方式重复的失败才不可重试 |
 | S5-08 | 主要 | `LOAD_FILTERED` 死信的批次 id 从标签中截取，批次 id 含 `_` 时出错（由 StarRocks 真实拒绝的行暴露） | 显式传入批次 id |
 | S5-09 | 主要 | 修复和重建使用的是缓存的元数据（10 分钟），刚补齐表结构就修复会再次失败 | 分析前调用 `invalidateAll()` |
+| P-01 | 阻断 | 3.1 FE 对 Stream Load 直接返回 307 并关闭连接，不读取正文；httpclient5 不等待 `100 Continue` 就发送正文，正文超过 socket 缓冲区（生产 30 条语句的血缘为 13.4 MB）时出现 `Broken pipe`。小正文能写进缓冲区，因此此前的测试全部通过 | 先用不带正文、使用独立标签 `<label>_route` 的探测请求解析路由，正文只发给执行端（见 Stage 6） |
 
 ## 由引擎实证的设计假设（无需修改）
 
-- 3.1 FE **强制要求** `Expect: 100-continue`（否则返回 `There is no 100-continue header`）。
+- 3.1 FE **强制要求** `Expect: 100-continue`（否则返回 `There is no 100-continue header`），正文为空的请求也一样；FE 返回 307 时不发送 `100 Continue`，也不会为该请求开启事务。
 - 重复标签返回 `"Status": "Label Already Exists"` 和 `"ExistingJobStatus": "FINISHED"`，与客户端的判定逻辑一致。
 - `JOIN USING` 不合并同名列；SEMI/ANTI JOIN 只输出一侧的列；UNNEST 默认列名为 `unnest`；VALUES 默认列名为 `column_i`；集合操作取第一个分支的列名。
 - 在主键表上 `INSERT` 等同于 upsert；刷新 SQL 中 `INSERT … SELECT … JOIN 日事实表` 以及带子查询的 `DELETE` 可以正常执行。

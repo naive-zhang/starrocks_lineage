@@ -26,6 +26,9 @@ import java.util.Objects;
 import java.util.function.UnaryOperator;
 import java.util.regex.Pattern;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * Minimal StarRocks Stream Load client ({@code PUT /api/{db}/{table}/_stream_load}, JSON array body).
  *
@@ -52,6 +55,12 @@ public final class StreamLoadClient implements Closeable {
     private static final Pattern LABEL = Pattern.compile("[-_A-Za-z0-9:]{1,128}");
     private static final Pattern NAME = Pattern.compile("[A-Za-z0-9_]+");
     private static final int MAX_REDIRECTS = 3;
+    private static final Logger LOG = LoggerFactory.getLogger(StreamLoadClient.class);
+    /**
+     * Warning threshold: a JSON stream load is limited by the BE config {@code streaming_load_max_batch_size_mb}
+     * (100 MB by default in 3.1). Measured with the production statements: 17,756 lineage edges = 13.4 MB.
+     */
+    static final long LARGE_BODY_BYTES = 64L * 1024 * 1024;
 
     private final URI feHttpUrl;
     private final String authorization;
@@ -124,38 +133,45 @@ public final class StreamLoadClient implements Closeable {
         if (!LABEL.matcher(label).matches()) {
             throw new IllegalArgumentException("invalid stream load label: " + label);
         }
-        URI target = feHttpUrl.resolve("/api/" + db + "/" + table + "/_stream_load");
+        if (body.length > LARGE_BODY_BYTES) {
+            LOG.warn("stream load {} to {}.{} is {} MB: JSON loads are limited by streaming_load_max_batch_size_mb "
+                    + "(100 MB by default) - reduce sliceSize", label, db, table, body.length / (1024 * 1024));
+        }
+        URI fe = feHttpUrl.resolve("/api/" + db + "/" + table + "/_stream_load");
+        String probeLabel = (label.length() <= 122 ? label : label.substring(0, 122)) + "_route";
+        // the body never travels to an FE: the FE answers 307 without reading it and closes the connection, so a
+        // body larger than the socket buffers fails with "Broken pipe" (verified on 3.1.17 with a 13 MB load)
+        Response first;
+        try {
+            first = send(fe, label, probeLabel, columns, null, tolerateFilteredRows);
+        } catch (IOException e) {
+            throw new PipelineException("stream load " + label + " to " + db + "." + table + ": FE " + fe
+                    + " unreachable: " + e.getMessage(), e);
+        }
+        URI target = first.isRedirect() ? redirect(fe, first) : fe;
         for (int hop = 0; hop <= MAX_REDIRECTS; hop++) {
-            HttpPut put = new HttpPut(target);
-            put.setHeader("Authorization", authorization);
-            put.setHeader("Expect", "100-continue");
-            put.setHeader("Connection", "close");
-            put.setHeader("label", label);
-            put.setHeader("format", "json");
-            put.setHeader("strip_outer_array", "true");
-            put.setHeader("columns", columns);
-            put.setHeader("timeout", String.valueOf(Math.max(1, loadTimeout.getSeconds())));
-            if (tolerateFilteredRows) {
-                put.setHeader("max_filter_ratio", "1");
-            }
-            put.setEntity(new ByteArrayEntity(body, ContentType.APPLICATION_JSON));
             Response response;
             try {
-                response = http.execute(put, r -> {
-                    Header location = r.getFirstHeader("Location");
-                    String text = r.getEntity() == null ? "" : EntityUtils.toString(r.getEntity(),
-                            StandardCharsets.UTF_8);
-                    return new Response(r.getCode(), location == null ? null : location.getValue(), text);
-                });
+                response = send(target, label, label, columns, body, tolerateFilteredRows);
             } catch (IOException e) {
-                throw new PipelineException("stream load " + label + " to " + db + "." + table + " failed: "
-                        + e.getMessage(), e);
-            }
-            if (response.code == 307 || response.code == 302 || response.code == 301 || response.code == 308) {
-                if (response.location == null) {
-                    throw new PipelineException("stream load redirect without Location from " + target);
+                // either an FE that hung up on the body (a follower redirecting to the leader), or a real failure
+                Response probe;
+                try {
+                    probe = send(target, label, probeLabel, columns, null, tolerateFilteredRows);
+                } catch (IOException probeFailure) {
+                    e.addSuppressed(probeFailure);
+                    throw new PipelineException("stream load " + label + " to " + db + "." + table + " failed: "
+                            + e.getMessage(), e);
                 }
-                target = redirectRewriter.apply(target.resolve(response.location));
+                if (!probe.isRedirect()) {
+                    throw new PipelineException("stream load " + label + " to " + db + "." + table + " failed: "
+                            + e.getMessage(), e);
+                }
+                target = redirect(target, probe);
+                continue;
+            }
+            if (response.isRedirect()) {
+                target = redirect(target, response);
                 continue;
             }
             if (response.code != 200) {
@@ -165,6 +181,41 @@ public final class StreamLoadClient implements Closeable {
             return interpret(label, response.body);
         }
         throw new PipelineException("stream load " + label + ": too many redirects");
+    }
+
+    /**
+     * One request of a stream load. Without {@code body} it is a <b>route probe</b>: it carries
+     * {@code probeLabel}, never the real label, so even when it reaches a BE (which executes it as an empty load) it
+     * cannot consume the label of the data.
+     */
+    private Response send(URI target, String label, String requestLabel, String columns, byte[] body,
+                          boolean tolerateFilteredRows) throws IOException {
+        HttpPut put = new HttpPut(target);
+        put.setHeader("Authorization", authorization);
+        put.setHeader("Connection", "close");
+        put.setHeader("label", requestLabel);
+        put.setHeader("format", "json");
+        put.setHeader("strip_outer_array", "true");
+        put.setHeader("columns", columns);
+        put.setHeader("timeout", String.valueOf(Math.max(1, loadTimeout.getSeconds())));
+        if (tolerateFilteredRows) {
+            put.setHeader("max_filter_ratio", "1");
+        }
+        // the 3.1 FE refuses any stream load request without it, the body-less probe included
+        put.setHeader("Expect", "100-continue");
+        put.setEntity(new ByteArrayEntity(body == null ? new byte[0] : body, ContentType.APPLICATION_JSON));
+        return http.execute(put, r -> {
+            Header location = r.getFirstHeader("Location");
+            String text = r.getEntity() == null ? "" : EntityUtils.toString(r.getEntity(), StandardCharsets.UTF_8);
+            return new Response(r.getCode(), location == null ? null : location.getValue(), text);
+        });
+    }
+
+    private URI redirect(URI from, Response response) {
+        if (response.location == null) {
+            throw new PipelineException("stream load redirect without Location from " + from);
+        }
+        return redirectRewriter.apply(from.resolve(response.location));
     }
 
     private Result interpret(String label, String body) {
@@ -300,6 +351,10 @@ public final class StreamLoadClient implements Closeable {
             this.code = code;
             this.location = location;
             this.body = body;
+        }
+
+        boolean isRedirect() {
+            return code == 301 || code == 302 || code == 307 || code == 308;
         }
     }
 

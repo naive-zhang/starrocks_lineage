@@ -348,10 +348,11 @@ class PipelineEndToEndIT {
         audited(base, "alice", "EOF", "", "SELECT amount FROM e2e_sales.orders", true);
         Interceptor crash = new Interceptor();
         crash.before.put("writeUsage", kill("before the usage load"));
-        AuditLogSyncPipeline p = pipeline(config("it-node").labelRetention(Duration.ofSeconds(1)).build(),
+        // the retention must outlast one resumed cycle after REDO (member read, cold metadata, route probes)
+        AuditLogSyncPipeline p = pipeline(config("it-node").labelRetention(Duration.ofSeconds(8)).build(),
                 crash.wrap(realSink()), false);
         assertThrows(PipelineException.class, () -> drain(p));
-        StarRocksCluster.sleep(1_500);
+        StarRocksCluster.sleep(8_500);
 
         CycleReport blocked = p.runOnce();
         assertEquals(CycleReport.Outcome.BLOCKED, blocked.getOutcome(), "real get_load_state answered UNKNOWN");
@@ -359,6 +360,9 @@ class PipelineEndToEndIT {
         assertEquals(0, num(usageOf("orders", "amount").get("access")));
 
         p.resolveBlockedStep(AuditLogSyncPipeline.StepResolution.REDO);
+        CycleReport redone = p.runOnce();
+        assertEquals(CycleReport.Outcome.COMMITTED, redone.getOutcome(), redone.toString());
+        assertTrue(redone.isReplay());
         drain(p);
         assertEquals(1, num(usageOf("orders", "amount").get("access")));
     }
