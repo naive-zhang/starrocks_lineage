@@ -68,7 +68,17 @@ final class FakeStarRocks implements AutoCloseable {
         beServer.createContext("/api/", this::be);
         beServer.start();
         followerServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        followerServer.createContext("/api/", ex -> redirect(ex, feUrl()));
+        followerServer.createContext("/api/", ex -> {
+            if (ex.getRequestURI().getPath().endsWith("/get_load_state")) {
+                // GetStreamLoadState#redirectToLeader: 307 with the full URI, empty body
+                drain(ex.getRequestBody());
+                ex.getResponseHeaders().add("Location", feUrl().resolve(ex.getRequestURI().toString()).toString());
+                ex.sendResponseHeaders(307, -1);
+                ex.close();
+                return;
+            }
+            redirect(ex, feUrl());
+        });
         followerServer.start();
     }
 

@@ -244,4 +244,42 @@ class StreamLoadClientTest {
             throw new IllegalStateException(e);
         }
     }
+
+    /**
+     * Found on the production cluster (3 FE): the configured FE was a follower, which answers get_load_state with a
+     * 307 to the leader - the client read the empty redirect body. The state must be read from the leader.
+     */
+    @Test
+    void loadStateIsReadFromTheLeaderThroughAFollower() throws Exception {
+        try (StreamLoadClient viaFollower = new StreamLoadClient(sr.followerUrl(), FakeStarRocks.USER,
+                FakeStarRocks.PASSWORD, Duration.ofSeconds(30))) {
+            viaFollower.load("audit_lineage_db", "audit_user_dict", "f_label", StarRocksSink.DICT_COLUMNS, rows("a"));
+            assertEquals(StreamLoadClient.LoadState.COMMITTED, viaFollower.loadState("audit_lineage_db", "f_label"));
+            assertEquals(StreamLoadClient.LoadState.UNKNOWN, viaFollower.loadState("audit_lineage_db", "nope"));
+        }
+    }
+
+    /** An answer that is not a load state says what it was: HTTP code and body, never an empty message. */
+    @Test
+    void anUnusableLoadStateAnswerNamesTheCodeAndBody() throws Exception {
+        try (StreamLoadClient wrongPassword = new StreamLoadClient(sr.feUrl(), FakeStarRocks.USER, "nope",
+                Duration.ofSeconds(5))) {
+            PipelineException e = assertThrows(PipelineException.class,
+                    () -> wrongPassword.loadState("audit_lineage_db", "x"));
+            assertTrue(e.getMessage().contains("HTTP 401"), e.getMessage());
+        }
+        HttpServer empty = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        empty.createContext("/", ex -> {
+            ex.sendResponseHeaders(200, -1);
+            ex.close();
+        });
+        empty.start();
+        try (StreamLoadClient c = new StreamLoadClient(URI.create("http://127.0.0.1:" + empty.getAddress().getPort()),
+                "u", "p", Duration.ofSeconds(5))) {
+            PipelineException e = assertThrows(PipelineException.class, () -> c.loadState("db", "x"));
+            assertTrue(e.getMessage().contains("(empty body)"), e.getMessage());
+        } finally {
+            empty.stop(0);
+        }
+    }
 }

@@ -34,6 +34,7 @@ INITIAL_LOOKBACK_HOURS=24
 - `PIPELINE` 一旦确定就**不要再改**。
 - 如果 BE 注册的地址从这台机器访问不到，配置 `SR_BE_REWRITE=BE内网IP:8040=可达地址:端口`，多条用逗号分隔。
 - `OWNER` 默认取主机名，每台机器各不相同即可。
+- 多 FE 集群中，`SR_FE_HOST` 可以填任意一个 FE（或 FE 前面的负载均衡地址）。导入和标签状态查询都会自动跟随跳转到 Leader，主备切换后无需改配置。
 
 ```bash
 chmod 600 /opt/audit-lineage/lineage.properties

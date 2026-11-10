@@ -39,5 +39,6 @@
 | J-03 | 部署手册初稿建议运维操作与 daemon 共用同一个 OWNER，但同一个 owner 的两个进程不会互斥 | 改为先停掉 daemon 再执行运维操作 |
 | J-04（测试） | `Process.destroy()` 发出 SIGTERM 后会立即关闭管道，daemon 的停止日志因此丢失 | 测试中把 daemon 的输出重定向到文件 |
 | J-05（测试） | 两次 `run` 之间可能刚好有一个时间片关闭，第二次会提交一个空批次 | 断言改为 `records=0` 且 IDLE |
+| J-06 | **生产 `check` 发现（多 FE 集群）**：`stream_load` 一项失败，报 `get_load_state ...: unexpected answer`，后面的内容为空。3.1 的 `GetStreamLoadState` 在非 Leader FE 上会先执行 `redirectToLeader`，返回 307 和空正文，而客户端查询标签状态时不跟随跳转。影响不止于 `check`：Pipeline 中断后恢复时也要查询标签状态，在 Follower 上会反复失败、一直卡住。单 FE 的测试容器无法暴露这个问题 | 查询标签状态时跟随 FE 的跳转（最多 3 跳，每一跳都重新带认证，地址同样应用 `SR_BE_REWRITE`）；查不到状态时报错带上 HTTP 状态码和正文片段；测试替身的 Follower FE 按 3.1 源码行为返回跳转；新增 `loadStateIsReadFromTheLeaderThroughAFollower`（在旧代码上失败）和 `anUnusableLoadStateAnswerNamesTheCodeAndBody` |
 
 【首席架构师】**APPROVED**。

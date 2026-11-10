@@ -260,15 +260,37 @@ public final class StreamLoadClient implements Closeable {
         if (!NAME.matcher(db).matches() || !LABEL.matcher(label).matches()) {
             throw new IllegalArgumentException("invalid database / label: " + db + " / " + label);
         }
-        HttpGet get = new HttpGet(feHttpUrl.resolve("/api/" + db + "/get_load_state?label=" + label));
-        get.setHeader("Authorization", authorization);
-        get.setHeader("Connection", "close");
-        String body;
-        try {
-            body = http.execute(get, r -> r.getEntity() == null ? "" : EntityUtils.toString(r.getEntity(),
-                    StandardCharsets.UTF_8));
-        } catch (IOException e) {
-            throw new PipelineException("get_load_state " + label + " failed: " + e.getMessage(), e);
+        // a follower FE answers 307 to the leader (GetStreamLoadState#redirectToLeader in 3.1): follow it, otherwise
+        // the empty body of the redirect is all there is to read (found on a multi-FE production cluster)
+        URI target = feHttpUrl.resolve("/api/" + db + "/get_load_state?label=" + label);
+        Response response = null;
+        for (int hop = 0; hop <= MAX_REDIRECTS; hop++) {
+            HttpGet get = new HttpGet(target);
+            get.setHeader("Authorization", authorization);
+            get.setHeader("Connection", "close");
+            try {
+                response = http.execute(get, r -> {
+                    Header location = r.getFirstHeader("Location");
+                    String text = r.getEntity() == null ? "" : EntityUtils.toString(r.getEntity(),
+                            StandardCharsets.UTF_8);
+                    return new Response(r.getCode(), location == null ? null : location.getValue(), text);
+                });
+            } catch (IOException e) {
+                throw new PipelineException("get_load_state " + label + " at " + target + " failed: "
+                        + e.getMessage(), e);
+            }
+            if (!response.isRedirect()) {
+                break;
+            }
+            target = redirect(target, response);
+        }
+        if (response.isRedirect()) {
+            throw new PipelineException("get_load_state " + label + ": too many redirects (last " + target + ")");
+        }
+        String body = response.body;
+        if (response.code != 200) {
+            throw new PipelineException("get_load_state " + label + " at " + target + ": HTTP " + response.code
+                    + " " + excerpt(body));
         }
         try {
             String state = json.readTree(body).path("state").asText("").toUpperCase(Locale.ROOT);
@@ -287,11 +309,21 @@ public final class StreamLoadClient implements Closeable {
                 case "UNKNOWN":
                     return LoadState.UNKNOWN;
                 default:
-                    throw new PipelineException("get_load_state " + label + ": unexpected answer " + body);
+                    throw new PipelineException("get_load_state " + label + " at " + target + ": unexpected answer "
+                            + excerpt(body));
             }
         } catch (IOException e) {
-            throw new PipelineException("get_load_state " + label + ": unreadable answer " + body, e);
+            throw new PipelineException("get_load_state " + label + " at " + target + ": unreadable answer "
+                    + excerpt(body), e);
         }
+    }
+
+    private static String excerpt(String body) {
+        if (body == null || body.trim().isEmpty()) {
+            return "(empty body)";
+        }
+        String flat = body.replaceAll("\\s+", " ").trim();
+        return flat.length() > 300 ? flat.substring(0, 300) + "..." : flat;
     }
 
     /**
