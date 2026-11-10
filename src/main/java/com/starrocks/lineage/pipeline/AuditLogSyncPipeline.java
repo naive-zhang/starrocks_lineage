@@ -967,10 +967,18 @@ public final class AuditLogSyncPipeline implements AutoCloseable {
         }
     }
 
+    /**
+     * Stack of the analysis threads. The generated parser and the visitor recurse with the nesting of a statement:
+     * production ETL statements (CTE chains, CASE ladders, deeply nested sub-queries) need more than the JVM default
+     * of 512 KB - 1 MB, and a too small stack turns valid statements into "nesting too deep" dead letters. Owning the
+     * size here means no {@code -Xss} has to be remembered at deployment.
+     */
+    public static final long ANALYSIS_STACK_BYTES = 16L * 1024 * 1024;
+
     private static ThreadFactory namedThreads(String prefix) {
         AtomicInteger n = new AtomicInteger();
         return r -> {
-            Thread t = new Thread(r, prefix + "-" + n.incrementAndGet());
+            Thread t = new Thread(null, r, prefix + "-" + n.incrementAndGet(), ANALYSIS_STACK_BYTES);
             t.setDaemon(true);
             return t;
         };

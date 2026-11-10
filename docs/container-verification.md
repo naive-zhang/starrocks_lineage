@@ -1,7 +1,7 @@
 # 真实 StarRocks 3.1 容器验证（Testcontainers）
 
 ```bash
-mvn verify -Pit        # 单元测试 462 个 + 容器集成测试 46 个；需要 Docker，没有 Docker 时自动跳过 IT
+mvn verify -Pit        # 单元测试 469 个 + 容器集成测试 48 个；需要 Docker，没有 Docker 时自动跳过 IT
 mvn test               # 只跑单元测试（不依赖 Docker）
 ```
 
@@ -19,6 +19,7 @@ mvn test               # 只跑单元测试（不依赖 Docker）
 | `AnalyzerDifferentialIT` | 21 | 8 个验收用例的 SQL 都能在 3.1 上**执行**，用真实元数据分析得到相同的血缘边；12 种查询形态下分析器推导的列名与引擎为视图生成的列名**完全一致**；`JOIN USING` 下的 `*` 与引擎结果集一致（13 列）；元数据提供者使用真实 `information_schema`，包括表名大小写、ALTER 之后的缓存失效 |
 | `PipelineEndToEndIT` | 7 | 全真实组件：首次运行跨越昨天和今天；在每个写入步骤之后"杀进程"再恢复，快照逐字段不变；标签过保留期时 BLOCKED，`redo` 后精确一次；中断期间到达的审计行进入 LATE 批次；暂停的实例被隔离、接管者完成批次；死信在补齐表结构后修复；被篡改的历史日期经重建（中途崩溃后恢复）精确还原 |
 | `ProductionInsertsIT` | 2 | 用生产 DDL 建出被引用的 67 张表，**执行 30 条生产 INSERT**；用真实 `information_schema` 解析出的血缘与评审后的快照逐行一致；30 条语句走完整 Pipeline，一次写入 17,756 条血缘（13.4 MB，经 FE），没有死信（见 `docs/stage6-production-inserts.md`） |
+| `StandaloneJarIT` | 2 | 以独立进程 `java -jar` 运行打包后的 jar，使用低权限账号依次执行 check、analyze、run、status，再启动 daemon 并发送 SIGTERM，确认租约已释放；旧版 DDL 会被 `check` 拒绝 |
 | `SmokeRunbookIT` | 1 | 按 `docs/staging-smoke-test.md` 逐步演练，使用低权限账号与原始脚本，并通过子进程调用 jshell（包括 `smoke-ops.jsh`） |
 
 ## 只有真实引擎才能发现的问题（均已修复）
