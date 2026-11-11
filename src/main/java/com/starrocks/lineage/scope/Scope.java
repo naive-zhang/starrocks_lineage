@@ -97,6 +97,11 @@ public final class Scope {
     /**
      * Adds a relation to the FROM namespace (in FROM / JOIN order).
      *
+     * <p>StarRocks 3.1 checks alias uniqueness separately for tables and for sub-queries: two tables, or two
+     * sub-queries, with one alias are "Not unique table/alias", but one table and one sub-query may share it - a
+     * qualified column then belongs to the one that has it (verified on 3.1.17; found by the pipeline on production
+     * statements). Other relation kinds keep the strict rule.</p>
+     *
      * @throws SemanticAnalysisException {@link ErrorCode#DUPLICATE_RELATION} when another relation of this block is
      *                                   referenced through the same alias / table name ("Not unique table/alias")
      */
@@ -106,13 +111,18 @@ public final class Scope {
         Optional<String> name = relation.referenceName();
         if (name.isPresent()) {
             for (RelationDescriptor r : relations) {
-                if (r.referenceName().equals(name)) {
+                if (r.referenceName().equals(name) && !tableAndSubquery(r.getKind(), relation.getKind())) {
                     throw new SemanticAnalysisException(ErrorCode.DUPLICATE_RELATION,
                             "Not unique table/alias: '" + relation.displayName() + "'");
                 }
             }
         }
         relations.add(relation);
+    }
+
+    private static boolean tableAndSubquery(RelationKind a, RelationKind b) {
+        return (a == RelationKind.TABLE && b == RelationKind.SUBQUERY)
+                || (a == RelationKind.SUBQUERY && b == RelationKind.TABLE);
     }
 
     /**
@@ -343,28 +353,41 @@ public final class Scope {
             if (matching.isEmpty()) {
                 continue;
             }
-            if (matching.size() > 1) {
-                throw new SemanticAnalysisException(ErrorCode.AMBIGUOUS_COLUMN,
-                        "qualifier '" + String.join(".", qualifier) + "' matches several relations");
-            }
-            RelationDescriptor rel = matching.get(0);
             String column = parts.get(k);
             List<String> path = new ArrayList<>(parts.subList(k + 1, parts.size()));
-            Optional<ResolvedColumn> hit = fieldOf(rel, column, path, false);
-            if (hit.isPresent()) {
-                return hit;
+            // several relations share the qualifier (a table and a sub-query, see addRelation): the column decides
+            List<ResolvedColumn> known = new ArrayList<>(1);
+            for (RelationDescriptor rel : matching) {
+                fieldOf(rel, column, path, false).ifPresent(known::add);
+            }
+            if (known.size() == 1) {
+                return Optional.of(known.get(0));
+            }
+            if (known.size() > 1) {
+                throw new SemanticAnalysisException(ErrorCode.AMBIGUOUS_COLUMN,
+                        "Column '" + String.join(".", parts) + "' is ambiguous");
             }
             if (policy != AliasPolicy.NONE && path.isEmpty()) {
                 // before an on-demand field: an alias of a bare column of exactly this relation is evidence, an
                 // invented column of a relation without metadata is a guess
-                Optional<ResolvedColumn> alias = resolveQualifiedSelectAlias(rel, column);
-                if (alias.isPresent()) {
-                    return alias;
+                for (RelationDescriptor rel : matching) {
+                    Optional<ResolvedColumn> alias = resolveQualifiedSelectAlias(rel, column);
+                    if (alias.isPresent()) {
+                        return alias;
+                    }
                 }
             }
-            hit = fieldOf(rel, column, path, true);
-            if (hit.isPresent()) {
-                return hit;
+            List<ResolvedColumn> onDemand = new ArrayList<>(1);
+            for (RelationDescriptor rel : matching) {
+                fieldOf(rel, column, path, true).ifPresent(onDemand::add);
+            }
+            if (onDemand.size() == 1) {
+                return Optional.of(onDemand.get(0));
+            }
+            if (onDemand.size() > 1) {
+                throw new SemanticAnalysisException(ErrorCode.AMBIGUOUS_COLUMN,
+                        "Column '" + String.join(".", parts) + "' may belong to any of " + onDemand.size()
+                                + " relations without metadata");
             }
         }
         Optional<ResolvedColumn> unqualified = resolveUnqualified(visible, parts);
@@ -503,10 +526,8 @@ public final class Scope {
                 throw new SemanticAnalysisException(ErrorCode.RELATION_NOT_FOUND,
                         "Unknown table '" + String.join(".", qualifier) + "'");
             }
-            if (targets.size() > 1) {
-                throw new SemanticAnalysisException(ErrorCode.AMBIGUOUS_COLUMN,
-                        "qualifier '" + String.join(".", qualifier) + "' matches several relations");
-            }
+            // a table and a sub-query sharing the alias: q.* expands both, in FROM order (StarRocks 3.1.17)
+
         }
         List<ResolvedColumn> columns = new ArrayList<>();
         Set<String> unexpanded = new LinkedHashSet<>();
