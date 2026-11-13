@@ -164,7 +164,10 @@ class PipelineEndToEndIT {
     private StarRocksSink realSink() {
         StreamLoadClient client = sr.streamLoadClient();
         closeables.add(client);
-        return new StarRocksSink(sr.dataSource(), client, "audit_lineage_db", "e2e", Clock.systemUTC());
+        // 4 KB chunks: every batch lineage of the scenario is loaded in several chunks on the real engine, and a
+        // crash after it is replayed through clearBatchLineage
+        return new StarRocksSink(sr.dataSource(), client, "audit_lineage_db", "e2e", Clock.systemUTC(), 4 * 1024,
+                StarRocksSink.DEFAULT_MAX_LOAD_BYTES);
     }
 
     /** A sink that runs {@code hooks} (by method name, once each) before or after delegating to the real one. */
@@ -460,12 +463,16 @@ class PipelineEndToEndIT {
         AuditLogSyncPipeline rebuilding = pipeline(config("it-node").build(), crash.wrap(realSink()), false);
         p.close();
         assertThrows(PipelineException.class, () -> rebuilding.rebuild(yesterday, yesterday.plusDays(1)));
-        CycleReport resumed = rebuilding.runOnce();
-        assertEquals(BatchKind.REBUILD, resumed.getKind().get());
-        assertEquals(8, resumed.getRecords());
+        // run / the daemon complete the interrupted day hour by hour (the chain of REBUILD batches)
+        List<CycleReport> resumed = drain(rebuilding);
+        assertEquals(24, resumed.stream().filter(r -> r.getKind().get() == BatchKind.REBUILD).count());
+        assertEquals(8, resumed.stream().filter(r -> r.getKind().get() == BatchKind.REBUILD)
+                .mapToInt(CycleReport::getRecords).sum());
         assertEquals(expected, snapshot(), "usage, daily facts and lineage recomputed exactly");
 
-        rebuilding.rebuild(yesterday, yesterday.plusDays(1));
+        List<Integer> hours = new ArrayList<>();
+        rebuilding.rebuild(yesterday, yesterday.plusDays(1), (r, done, total) -> hours.add(done));
+        assertEquals(24, hours.size(), "one batch per hour");
         assertEquals(expected, snapshot(), "a rebuild is repeatable");
     }
 }

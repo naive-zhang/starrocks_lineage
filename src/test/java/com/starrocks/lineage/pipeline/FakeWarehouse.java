@@ -50,6 +50,8 @@ final class FakeWarehouse implements AuditLogSource, AuditLineageSink {
     final Map<String, Integer> crashAfter = new HashMap<>();
     final Map<String, Runnable> beforeOp = new HashMap<>();
     volatile Predicate<HourlyUsageRow> rejectUsage = r -> false;
+    /** Number of {@link #fetchProcessed} calls that fail (a reader of a rebuild). */
+    int failFetchProcessed;
 
     FakeWarehouse(String pipeline) {
         this.pipeline = pipeline;
@@ -168,6 +170,10 @@ final class FakeWarehouse implements AuditLogSource, AuditLineageSink {
     @Override
     public synchronized List<AuditLogRecord> fetchProcessed(String p, LocalDateTime from, LocalDateTime to,
                                                             Watermark after, int limit) {
+        if (failFetchProcessed > 0) {
+            failFetchProcessed--;
+            throw new IllegalStateException("injected read failure");
+        }
         return select(r -> members.containsKey(key(r)), from, to, after, limit);
     }
 
@@ -262,16 +268,22 @@ final class FakeWarehouse implements AuditLogSource, AuditLineageSink {
     @Override
     public synchronized StreamLoadClient.Result writeBatchLineage(String batchId, LocalDateTime batchTime,
                                                                   List<LineageRow> rows) {
+        // like StarRocksSink: chunked loads with per-call labels into a PRIMARY KEY table (an upsert, no label
+        // dedup); the pipeline clears the batch before a rewrite
         op("lineage");
-        String label = label(batchId, "lineage");
-        if (useLabel(label)) {
-            for (LineageRow r : rows) {
-                batchLineage.put(batchId + "|" + r.getEdgeId() + "|" + r.getStatDay() + "|false|" + batchTime,
-                        new LineageRowCell(batchId, r, false));
-            }
+        for (LineageRow r : rows) {
+            batchLineage.put(batchId + "|" + r.getEdgeId() + "|" + r.getStatDay() + "|false",
+                    new LineageRowCell(batchId, r, false));
         }
         crash("lineage");
-        return result(label, false, rows.size(), 0);
+        return result(label(batchId, "lineage"), false, rows.size(), 0);
+    }
+
+    @Override
+    public synchronized void clearBatchLineage(String batchId) {
+        op("clear_lineage");
+        batchLineage.values().removeIf(c -> c.batchId.equals(batchId) && !c.refreshOnly);
+        crash("clear_lineage");
     }
 
     @Override

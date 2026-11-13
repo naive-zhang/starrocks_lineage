@@ -30,7 +30,11 @@ import java.util.stream.Collectors;
  * {@link AuditLineageSink} for StarRocks 3.1 ({@code sql/ddl}).
  *
  * <ul>
- *   <li>Stream Load, one request per step (no chunking: a step must be atomic for exactly-once).</li>
+ *   <li>Stream Load, one request per step: an additive step must be atomic for exactly-once. The one exception is
+ *       the batch lineage (a PRIMARY KEY upsert the pipeline clears before it rewrites it), which is loaded in chunks
+ *       of at most {@code chunkBytes}: the lineage of a busy day is larger than the BE limit of one JSON load
+ *       ({@code streaming_load_max_batch_size_mb}). A load that cannot be chunked and is larger than
+ *       {@code maxLoadBytes} fails with an explanation instead of a "Broken pipe".</li>
  *   <li>Every string is truncated to its column width in UTF-8 bytes before loading, so the usual causes of rejected
  *       rows cannot happen; anything StarRocks still rejects is isolated as a LOAD_FILTERED dead letter.</li>
  *   <li>The lineage table is never incremented: {@link #refreshLineage} recomputes the touched edges from the daily
@@ -64,6 +68,13 @@ public final class StarRocksSink implements AuditLineageSink {
     private final String pipeline;
     private final Clock clock;
     private final ObjectMapper json = new ObjectMapper();
+    private final long chunkBytes;
+    private final long maxLoadBytes;
+
+    /** Chunk size of the batch lineage load. */
+    public static final long DEFAULT_CHUNK_BYTES = 32L * 1024 * 1024;
+    /** {@code streaming_load_max_batch_size_mb} of a 3.1 BE (default 100). */
+    public static final long DEFAULT_MAX_LOAD_BYTES = 100L * 1024 * 1024;
 
     public StarRocksSink(DataSource dataSource, StreamLoadClient streamLoad, String database, String pipeline) {
         this(dataSource, streamLoad, database, pipeline, Clock.systemDefaultZone());
@@ -71,6 +82,22 @@ public final class StarRocksSink implements AuditLineageSink {
 
     public StarRocksSink(DataSource dataSource, StreamLoadClient streamLoad, String database, String pipeline,
                          Clock clock) {
+        this(dataSource, streamLoad, database, pipeline, clock, DEFAULT_CHUNK_BYTES, DEFAULT_MAX_LOAD_BYTES);
+    }
+
+    /**
+     * @param chunkBytes   upper bound of one batch lineage load (JSON bytes)
+     * @param maxLoadBytes the BE {@code streaming_load_max_batch_size_mb} in bytes: larger loads that cannot be
+     *                     chunked are refused before they are sent
+     */
+    public StarRocksSink(DataSource dataSource, StreamLoadClient streamLoad, String database, String pipeline,
+                         Clock clock, long chunkBytes, long maxLoadBytes) {
+        if (chunkBytes < 1024 || maxLoadBytes < chunkBytes) {
+            throw new IllegalArgumentException("need 1 KB <= chunkBytes <= maxLoadBytes: " + chunkBytes + " / "
+                    + maxLoadBytes);
+        }
+        this.chunkBytes = chunkBytes;
+        this.maxLoadBytes = maxLoadBytes;
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
         this.streamLoad = Objects.requireNonNull(streamLoad, "streamLoad");
         if (!database.matches("[A-Za-z0-9_]+")) {
@@ -195,20 +222,55 @@ public final class StarRocksSink implements AuditLineageSink {
 
     @Override
     public StreamLoadClient.Result writeBatchLineage(String batchId, LocalDateTime batchTime, List<LineageRow> rows) {
-        List<Map<String, Object>> out = new ArrayList<>(rows.size());
-        for (LineageRow r : rows) {
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("pipeline_name", pipeline);
-            row.put("batch_id", batchId);
-            row.put("edge_id", r.getEdgeId());
-            row.put("stat_day", DATETIME.format(r.getStatDay()));
-            row.put("refresh_only", false);
-            row.put("batch_time", DATETIME.format(batchTime));
-            putEdge(row, r);
-            out.add(row);
+        if (rows.isEmpty()) {
+            return null;
         }
-        return load("audit_lineage_batch_lineage", batchId, label(batchId, "lineage"), BATCH_LINEAGE_COLUMNS, out,
-                true);
+        // chunk labels carry a per-call nonce: the caller clears the batch rows before a rewrite, so a chunk of a
+        // previous attempt must never be dropped as "label already used"
+        String attempt = java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+        List<Map<String, Object>> chunk = new ArrayList<>();
+        long chunkSize = 2;
+        int chunks = 0;
+        long loaded = 0;
+        long filtered = 0;
+        StreamLoadClient.Result last = null;
+        for (int i = 0; i < rows.size(); i++) {
+            Map<String, Object> row = batchLineageRow(batchId, batchTime, rows.get(i));
+            long size = serialise(row, "audit_lineage_batch_lineage").length + 1;
+            if (!chunk.isEmpty() && chunkSize + size > chunkBytes) {
+                last = load("audit_lineage_batch_lineage", batchId,
+                        label(batchId, "lineage_" + attempt + "_" + chunks++), BATCH_LINEAGE_COLUMNS, chunk, true);
+                loaded += last.getLoadedRows();
+                filtered += last.getFilteredRows();
+                chunk = new ArrayList<>();
+                chunkSize = 2;
+            }
+            chunk.add(row);
+            chunkSize += size;
+        }
+        last = load("audit_lineage_batch_lineage", batchId, label(batchId, "lineage_" + attempt + "_" + chunks++),
+                BATCH_LINEAGE_COLUMNS, chunk, true);
+        loaded += last.getLoadedRows();
+        filtered += last.getFilteredRows();
+        return chunks == 1 ? last : new StreamLoadClient.Result(last.getLabel(), false, loaded, filtered, last.getErrorUrl());
+    }
+
+    private Map<String, Object> batchLineageRow(String batchId, LocalDateTime batchTime, LineageRow r) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("pipeline_name", pipeline);
+        row.put("batch_id", batchId);
+        row.put("edge_id", r.getEdgeId());
+        row.put("stat_day", DATETIME.format(r.getStatDay()));
+        row.put("refresh_only", false);
+        row.put("batch_time", DATETIME.format(batchTime));
+        putEdge(row, r);
+        return row;
+    }
+
+    @Override
+    public void clearBatchLineage(String batchId) {
+        execute("DELETE FROM " + database + ".audit_lineage_batch_lineage WHERE pipeline_name = ? AND batch_id = ? "
+                + "AND refresh_only = false", pipeline, batchId);
     }
 
     static void putEdge(Map<String, Object> row, LineageRow r) {
@@ -237,16 +299,26 @@ public final class StarRocksSink implements AuditLineageSink {
      * Strict load first; on rejected rows a LOAD_FILTERED dead letter is written (before anything is loaded, so the
      * evidence survives a crash), then the same label is re-sent tolerating the rejected rows.
      */
+    private byte[] serialise(Object value, String table) {
+        try {
+            return json.writeValueAsBytes(value);
+        } catch (JsonProcessingException e) {
+            throw PipelineException.nonRetryable("serialising " + table + " rows failed", e);
+        }
+    }
+
     private StreamLoadClient.Result load(String table, String batchId, String label, String columns,
                                          List<Map<String, Object>> rows, boolean isolateRejectedRows) {
         if (rows.isEmpty()) {
             return null;
         }
-        byte[] body;
-        try {
-            body = json.writeValueAsBytes(rows);
-        } catch (JsonProcessingException e) {
-            throw PipelineException.nonRetryable("serialising " + table + " rows failed", e);
+        byte[] body = serialise(rows, table);
+        if (body.length > maxLoadBytes) {
+            throw PipelineException.nonRetryable(String.format("load %s into %s.%s is %d MB, above the %d MB a BE "
+                    + "accepts in one JSON Stream Load (BE config streaming_load_max_batch_size_mb): raise it on "
+                    + "every BE (curl -XPOST 'http://<be>:8040/api/update_config?streaming_load_max_batch_size_mb=512'"
+                    + " -u <admin>, and in be.conf) and set LOAD_MAX_MB to the same value, then run again", label,
+                    database, table, body.length / (1024 * 1024), maxLoadBytes / (1024 * 1024)), null);
         }
         try {
             return streamLoad.load(database, table, label, columns, body, false);
@@ -257,7 +329,9 @@ public final class StarRocksSink implements AuditLineageSink {
             LocalDateTime now = LocalDateTime.now(clock);
             DeadLetter evidence = new DeadLetter(label, DeadLetter.Kind.LOAD_FILTERED, DeadLetter.Status.OPEN,
                     batchId, null, now, rejected.getMessage(), rejected.getErrorUrl(), null);
-            writeDeadLetters(batchId, "filtered_" + table, Collections.singletonList(evidence));
+            // one evidence per load: the tag carries the step part of the label (chunks have their own labels)
+            String step = label.startsWith(batchId + "_") ? label.substring(batchId.length() + 1) : table;
+            writeDeadLetters(batchId, "filtered_" + step, Collections.singletonList(evidence));
             return streamLoad.load(database, table, label, columns, body, true);
         }
     }

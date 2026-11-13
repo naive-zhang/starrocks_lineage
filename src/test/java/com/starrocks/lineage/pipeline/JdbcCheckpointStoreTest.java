@@ -99,6 +99,28 @@ class JdbcCheckpointStoreTest {
         assertEquals(NOW, store.load("p").get().getLastReconcile().get());
     }
 
+    /** The hours of a rebuilt day: commit one and declare the next in a single write. */
+    @Test
+    void commitAndDeclareChainsBatchesAtomically() {
+        store.tryAcquireLease("p", "a", TTL, START);
+        store.savePending("p", "a", TTL, CheckpointStore.PendingBatch.declare("h0", BatchKind.REBUILD, START,
+                START.plusHours(1), NOW));
+        store.advanceStep("p", "a", TTL, "h0", BatchStep.REFRESH);
+        CheckpointStore.PendingBatch next = CheckpointStore.PendingBatch.declare("h1", BatchKind.REBUILD,
+                START.plusHours(1), START.plusHours(2), NOW);
+
+        store.commitAndDeclare("p", "a", TTL, "h0", 0, next);
+
+        CheckpointStore.Checkpoint cp = store.load("p").get();
+        assertEquals(next, cp.getPending().get());
+        assertEquals(START, cp.getCommittedUntil(), "a rebuild does not move the watermark");
+        assertThrows(PipelineException.class, () -> store.commitAndDeclare("p", "a", TTL, "h0", 0, next),
+                "h0 is no longer pending");
+        store.commit("p", "a", TTL, "h1", null, 0);
+        assertFalse(store.load("p").get().getPending().isPresent());
+        assertThrows(LeaseLostException.class, () -> store.commitAndDeclare("p", "b", TTL, "h1", 0, next));
+    }
+
     /** Gap 3: fencing - a paused owner cannot write after a take-over, and a released lease is free at once. */
     @Test
     void leaseFencingTakeoverAndRelease() {

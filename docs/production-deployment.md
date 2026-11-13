@@ -123,8 +123,18 @@ java -jar audit-lineage.jar redo --config ...                          # BLOCKED
 java -jar audit-lineage.jar mark-done --config ...                     # BLOCKED：确认数据已在 → 跳过该步骤
 java -jar audit-lineage.jar skip "原因" --config ...                    # 放弃待处理批次（记入死信）
 java -jar audit-lineage.jar repair "2026-11-09" "2026-11-10" --config ...   # 修复区间内 OPEN 的死信
-java -jar audit-lineage.jar rebuild 2026-11-01 2026-11-08 --config ...      # 按天重建
+java -jar audit-lineage.jar rebuild 2026-11-01 2026-11-08 --threads 12 --config ...   # 按天重建（每小时一个批次）
 ```
+
+`rebuild` 每完成一个小时输出一行 `REBUILD hour i/N elapsed=… eta=…`，日志中每 30 秒输出一行 `PROGRESS`。中断后**执行同一条命令**即可续跑，已完成的天不会重做。重建进行中，正在处理的那一天的数据是不完整的。相关配置项（详见 `docs/stage9-rebuild-chunks.md`）：
+
+| 键 | 默认值 | 含义 |
+|---|---|---|
+| `THREADS`（或命令行 `--threads N`） | CPU 核数 | 分析线程数 |
+| `REBUILD_READ_THREADS` | 2 | 重建时并行读取审计表的线程数 |
+| `PROGRESS_SECONDS` | 30 | 进度输出间隔 |
+| `LOAD_CHUNK_MB` | 32 | 批次血缘每次导入的块大小 |
+| `LOAD_MAX_MB` | 100 | 与 BE 的 `streaming_load_max_batch_size_mb` 保持一致；更大的、不能分块的导入会直接报错并给出处理办法 |
 
 ## 9. 回滚
 

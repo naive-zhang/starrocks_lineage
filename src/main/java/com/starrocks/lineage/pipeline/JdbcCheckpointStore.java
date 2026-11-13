@@ -148,6 +148,18 @@ public final class JdbcCheckpointStore implements CheckpointStore {
     }
 
     @Override
+    public void commitAndDeclare(String pipeline, String owner, Duration ttl, String batchId, long records,
+                                 PendingBatch next) {
+        Objects.requireNonNull(next, "next");
+        Checkpoint after = mutate(pipeline, owner, ttl, c -> {
+            requirePending(c, batchId);
+            return copy(c, next, c.getCommittedUntil(), c.getProcessedRows() + records,
+                    c.getLastReconcile().orElse(null), owner, c.getLeaseExpire());
+        });
+        requirePending(after, next.getBatchId());
+    }
+
+    @Override
     public void markReconciled(String pipeline, String owner, Duration ttl, LocalDateTime at) {
         mutate(pipeline, owner, ttl, c -> copy(c, c.getPending().orElse(null), c.getCommittedUntil(),
                 c.getProcessedRows(), at, owner, c.getLeaseExpire()));

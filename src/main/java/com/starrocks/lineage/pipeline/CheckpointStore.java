@@ -51,6 +51,13 @@ public interface CheckpointStore {
     void commit(String pipeline, String owner, Duration ttl, String batchId, LocalDateTime newCommittedUntil,
                 long records);
 
+    /**
+     * Completes the pending batch {@code batchId} and declares {@code next} in the same atomic checkpoint write (a
+     * chain of batches that must not stop half-way: the hours of a rebuilt day). The watermark does not move.
+     */
+    void commitAndDeclare(String pipeline, String owner, Duration ttl, String batchId, long records,
+                          PendingBatch next);
+
     /** Stores the time of the last reconciliation that found no late record. */
     void markReconciled(String pipeline, String owner, Duration ttl, LocalDateTime at);
 

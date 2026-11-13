@@ -177,6 +177,72 @@ class StreamLoadClientTest {
         assertEquals("0123abcd_usage", sink.label("0123abcd", "usage"));
     }
 
+    private static List<LineageRow> lineageRows(int n) {
+        List<LineageRow> rows = new java.util.ArrayList<>();
+        LocalDateTime day = LocalDateTime.of(2024, 6, 18, 0, 0);
+        for (int i = 0; i < n; i++) {
+            com.starrocks.lineage.model.ColumnLineageEdge e = com.starrocks.lineage.model.ColumnLineageEdge.of(
+                    ColumnIdentifier.parse("default_catalog.dw.target_" + i + ".c"),
+                    ColumnIdentifier.parse("default_catalog.ods.source_" + i + ".c"),
+                    com.starrocks.lineage.model.LineageType.DIRECT, com.starrocks.lineage.model.TransformType.IDENTITY,
+                    null);
+            rows.add(new LineageRow(day, e, com.starrocks.lineage.model.StatementType.INSERT_INTO, "d", "q" + i, "u",
+                    day.plusHours(1), day.plusHours(1), 1));
+        }
+        return rows;
+    }
+
+    /**
+     * Found by a production rebuild: the lineage of a multi-day batch was one 224 MB load, above the BE limit of a
+     * JSON Stream Load, and failed with "Broken pipe". The batch lineage is loaded in chunks.
+     */
+    @Test
+    void batchLineageIsLoadedInChunksUnderTheirOwnLabels() {
+        javax.sql.DataSource ds = new org.h2.jdbcx.JdbcDataSource();
+        StarRocksSink sink = new StarRocksSink(ds, client, "audit_lineage_db", "p", java.time.Clock.systemUTC(),
+                4 * 1024, 64 * 1024);
+        List<LineageRow> rows = lineageRows(40);
+
+        StreamLoadClient.Result r = sink.writeBatchLineage("0123abcd", LocalDateTime.of(2024, 6, 18, 12, 0), rows);
+
+        assertTrue(sr.loads.size() > 2, "40 rows of ~700 bytes do not fit into a 4 KB chunk: " + sr.loads.size());
+        assertEquals(40, r.getLoadedRows(), "the result sums the chunks");
+        assertEquals(40, sr.loads.stream().mapToInt(l -> l.rows.size()).sum(), "every row once");
+        java.util.Set<String> labels = new java.util.HashSet<>();
+        for (FakeStarRocks.Load l : sr.loads) {
+            assertTrue(l.label.startsWith("0123abcd_lineage_"), l.label);
+            assertTrue(labels.add(l.label), "one label per chunk");
+            assertTrue(l.rows.toString().getBytes(StandardCharsets.UTF_8).length <= 4 * 1024 + 1024,
+                    "a chunk stays near its bound");
+        }
+        int loads = sr.loads.size();
+        sink.writeBatchLineage("0123abcd", LocalDateTime.of(2024, 6, 18, 12, 0), rows);
+        assertEquals(2 * loads, sr.loads.size(), "a rewrite (after clearBatchLineage) uses fresh labels");
+        assertEquals(null, sink.writeBatchLineage("0123abcd", LocalDateTime.of(2024, 6, 18, 12, 0),
+                Collections.emptyList()));
+    }
+
+    @Test
+    void aLoadAboveTheBeLimitIsRefusedWithTheRemedy() {
+        javax.sql.DataSource ds = new org.h2.jdbcx.JdbcDataSource();
+        StarRocksSink sink = new StarRocksSink(ds, client, "audit_lineage_db", "p", java.time.Clock.systemUTC(),
+                1024, 2048);
+        HourlyUsageAggregator agg = new HourlyUsageAggregator();
+        for (int i = 0; i < 30; i++) {
+            agg.add(AggregatorsTest.record("q" + i, LocalDateTime.of(2024, 6, 18, 9, 15), "alice", 7, 100),
+                    AggregatorsTest.query(Collections.singletonMap(ColumnIdentifier.parse("default_catalog.db.t."
+                            + "c" + i), new com.starrocks.lineage.model.ClauseType[]{
+                            com.starrocks.lineage.model.ClauseType.SELECT})));
+        }
+        PipelineException e = assertThrows(PipelineException.class, () -> sink.writeUsage("0123abcd", agg.drain()));
+        assertFalse(e.isRetryable(), "the same load fails the same way: BLOCKED, not retried every minute");
+        assertTrue(e.getMessage().contains("streaming_load_max_batch_size_mb"), e.getMessage());
+        assertTrue(e.getMessage().contains("LOAD_MAX_MB"), e.getMessage());
+        assertTrue(sr.loads.isEmpty(), "nothing was sent");
+        assertThrows(IllegalArgumentException.class, () -> new StarRocksSink(ds, client, "db", "p",
+                java.time.Clock.systemUTC(), 4096, 1024), "a chunk larger than the limit");
+    }
+
     // ------------------------------------------------------------------------------------------------ routing
 
     /**

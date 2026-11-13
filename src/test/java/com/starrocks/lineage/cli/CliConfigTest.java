@@ -44,6 +44,26 @@ class CliConfigTest {
         assertEquals(Duration.ofHours(48), p.getLabelRetention());
         assertEquals(Duration.ofMinutes(10), p.getLeaseTtl());
         assertEquals(Duration.ofSeconds(60), c.interval());
+        assertEquals(2, p.getReadThreads());
+        assertEquals(Duration.ofSeconds(30), p.getProgressInterval());
+        assertEquals(32L * 1024 * 1024, c.loadChunkBytes());
+        assertEquals(100L * 1024 * 1024, c.loadMaxBytes(), "the BE default streaming_load_max_batch_size_mb");
+    }
+
+    @Test
+    void rebuildThreadsProgressAndLoadLimitsAreConfigurable() {
+        CliConfig c = CliConfig.load(env("SR_FE_HOST", "fe1", "THREADS", "12", "REBUILD_READ_THREADS", "6",
+                "PROGRESS_SECONDS", "10", "LOAD_CHUNK_MB", "64", "LOAD_MAX_MB", "512"), null);
+        PipelineConfig p = c.pipelineConfig(LocalDateTime.now());
+        assertEquals(12, p.getAnalyzerThreads());
+        assertEquals(6, p.getReadThreads());
+        assertEquals(Duration.ofSeconds(10), p.getProgressInterval());
+        assertEquals(64L * 1024 * 1024, c.loadChunkBytes());
+        assertEquals(512L * 1024 * 1024, c.loadMaxBytes());
+        assertThrows(IllegalArgumentException.class, () -> CliConfig.load(env("SR_FE_HOST", "x",
+                "REBUILD_READ_THREADS", "0"), null));
+        assertThrows(IllegalArgumentException.class, () -> CliConfig.load(env("SR_FE_HOST", "x",
+                "LOAD_CHUNK_MB", "200"), null), "a chunk must fit under the BE limit");
     }
 
     @Test

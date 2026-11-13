@@ -55,6 +55,10 @@ public final class CliConfig {
         d.put("ALERT_AFTER_ATTEMPTS", "5");
         d.put("LEASE_TTL_SECONDS", "600");
         d.put("THREADS", String.valueOf(Runtime.getRuntime().availableProcessors()));
+        d.put("REBUILD_READ_THREADS", "2");
+        d.put("PROGRESS_SECONDS", "30");
+        d.put("LOAD_CHUNK_MB", "32");
+        d.put("LOAD_MAX_MB", "100");
         d.put("INTERVAL_SECONDS", "60");
         d.put("LOAD_TIMEOUT_SECONDS", "600");
         DEFAULTS = Collections.unmodifiableMap(d);
@@ -105,12 +109,15 @@ public final class CliConfig {
 
     private void validate() {
         for (String key : DEFAULTS.keySet()) {
-            if (key.endsWith("_PORT") || key.endsWith("_SECONDS") || key.endsWith("_HOURS") || key.equals("THREADS")
-                    || key.equals("ALERT_AFTER_ATTEMPTS")) {
+            if (key.endsWith("_PORT") || key.endsWith("_SECONDS") || key.endsWith("_HOURS") || key.endsWith("THREADS")
+                    || key.endsWith("_MB") || key.equals("ALERT_AFTER_ATTEMPTS")) {
                 if (intValue(key) <= 0) {
                     throw new IllegalArgumentException(key + " must be > 0: " + values.get(key));
                 }
             }
+        }
+        if (intValue("LOAD_CHUNK_MB") > intValue("LOAD_MAX_MB")) {
+            throw new IllegalArgumentException("LOAD_CHUNK_MB must not exceed LOAD_MAX_MB");
         }
         if (!lineageDb().matches("[A-Za-z0-9_]+")) {
             throw new IllegalArgumentException("invalid LINEAGE_DB " + lineageDb());
@@ -183,7 +190,19 @@ public final class CliConfig {
                 .alertAfterAttempts(intValue("ALERT_AFTER_ATTEMPTS"))
                 .leaseTtl(Duration.ofSeconds(intValue("LEASE_TTL_SECONDS")))
                 .analyzerThreads(intValue("THREADS"))
+                .readThreads(intValue("REBUILD_READ_THREADS"))
+                .progressInterval(Duration.ofSeconds(intValue("PROGRESS_SECONDS")))
                 .build();
+    }
+
+    /** @return upper bound of one chunk of the batch lineage load */
+    public long loadChunkBytes() {
+        return intValue("LOAD_CHUNK_MB") * 1024L * 1024L;
+    }
+
+    /** @return the BE {@code streaming_load_max_batch_size_mb} this deployment runs with */
+    public long loadMaxBytes() {
+        return intValue("LOAD_MAX_MB") * 1024L * 1024L;
     }
 
     public HikariDataSource dataSource() {
@@ -192,7 +211,8 @@ public final class CliConfig {
                 + "/?useSSL=false&allowPublicKeyRetrieval=true&connectTimeout=10000&socketTimeout=600000");
         hc.setUsername(get("SR_USER"));
         hc.setPassword(get("SR_PASSWORD"));
-        hc.setMaximumPoolSize(Math.max(4, intValue("THREADS") + 2));
+        // analysis threads read metadata, rebuild readers read the audit table, plus the pipeline's own statements
+        hc.setMaximumPoolSize(Math.max(4, intValue("THREADS") + intValue("REBUILD_READ_THREADS") + 2));
         hc.setPoolName("audit-lineage");
         return new HikariDataSource(hc);
     }

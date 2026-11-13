@@ -105,7 +105,7 @@ interface AuditLineageSink {  // 每个方法是一次原子写入，标签 = la
 
 | 情况 | 现象 | 操作 |
 |---|---|---|
-| 批次在累加型步骤上被阻塞（标签已过保留期） | `BLOCKED`，消息包含 "label retention" | 按 `pending` 中的 `[range_start, range_end)` 和步骤核对目标表：USAGE 看该时间段的用量是否已包含这批记录，LINEAGE_STAGE 看 `audit_lineage_batch_lineage` 中是否有该 `batch_id`，LINEAGE_DAILY 看日事实。数据**在** → `mark-done`；**不在** → `redo` |
+| 批次在累加型步骤上被阻塞（标签已过保留期） | `BLOCKED`，消息包含 "label retention" | 按 `pending` 中的 `[range_start, range_end)` 和步骤核对目标表：USAGE 看该时间段的用量是否已包含这批记录，LINEAGE_DAILY 看日事实（Stage 9 起 LINEAGE_STAGE 分块写入，恢复时先清除再重写，不再需要人工判断）。数据**在** → `mark-done`；**不在** → `redo` |
 | 批次反复因同一个不可重试错误失败 | `BLOCKED`，`attempts` 不断增加，有 ALERT 日志 | 先修复原因（权限、表结构等），下一周期会自动重试。确实无法处理时用 `skip`（必须给出原因，会写入 `BATCH_SKIPPED` 死信）。SLICE 的成员会被写入，所以对账不会再拾取这些记录；之后可以对这些天执行 `rebuild` |
 | 修复分析器或补齐元数据之后 | 死信表中有 OPEN 的 `PARSE_ERROR` / `ANALYSIS_ERROR` | `repair`，指定审计时间范围 |
 | 分析器逻辑变更后，需要重算历史 | — | `rebuild`，按整天进行；如果这些天的审计记录已经超过审计表保留期，操作会被拒绝 |

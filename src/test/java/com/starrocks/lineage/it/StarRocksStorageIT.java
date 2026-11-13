@@ -295,6 +295,42 @@ class StarRocksStorageIT {
                 + "WHERE stat_day < ?", today), "refresh-only rows are never added to the facts");
     }
 
+    /** A resumed batch clears its chunked stage (PRIMARY KEY DELETE with a predicate) and loads it again. */
+    @Test
+    void batchLineageIsChunkedAndClearedOnTheRealEngine() {
+        StarRocksSink chunked = new StarRocksSink(sr.dataSource(), client, "audit_lineage_db", P, Clock.systemUTC(),
+                2 * 1024, StarRocksSink.DEFAULT_MAX_LOAD_BYTES);
+        LineageAggregator agg = new LineageAggregator();
+        for (int i = 0; i < 30; i++) {
+            ColumnIdentifier tgt = ColumnIdentifier.parse("default_catalog.dw.chunk_t.c" + i);
+            ColumnIdentifier src = ColumnIdentifier.parse("default_catalog.ods.chunk_s.c" + i);
+            agg.add(record("qc" + i, hour, "etl", 1, 1), SqlParseResult.builder("c").statementType(
+                    StatementType.INSERT_INTO).addEdge(ColumnLineageEdge.of(tgt, src, LineageType.DIRECT,
+                    TransformType.IDENTITY, null)).build());
+        }
+        List<LineageRow> rows = agg.drain();
+        writeBatch("it_pre", rows.subList(0, 5));
+        sink.recordEdgesForRefresh("it_chunk", hour, today.minusDays(400), today.plusDays(1));
+        long refreshOnly = count("SELECT COUNT(*) FROM audit_lineage_db.audit_lineage_batch_lineage WHERE "
+                + "batch_id = 'it_chunk' AND refresh_only = true");
+        assertTrue(refreshOnly >= 5, "the edges of the earlier batch are recorded for the refresh");
+
+        StreamLoadClient.Result r = chunked.writeBatchLineage("it_chunk", hour, rows);
+        assertEquals(30, r.getLoadedRows());
+        assertEquals(30L, count("SELECT COUNT(*) FROM audit_lineage_db.audit_lineage_batch_lineage WHERE "
+                + "batch_id = 'it_chunk' AND refresh_only = false"));
+
+        chunked.clearBatchLineage("it_chunk");
+        assertEquals(0L, count("SELECT COUNT(*) FROM audit_lineage_db.audit_lineage_batch_lineage WHERE "
+                + "batch_id = 'it_chunk' AND refresh_only = false"));
+        assertEquals(refreshOnly, count("SELECT COUNT(*) FROM audit_lineage_db.audit_lineage_batch_lineage WHERE "
+                + "batch_id = 'it_chunk' AND refresh_only = true"), "refresh-only rows are kept");
+        chunked.writeBatchLineage("it_chunk", hour, rows.subList(0, 10));
+        chunked.insertDaily("it_chunk");
+        assertEquals(10L, count("SELECT COUNT(*) FROM audit_lineage_db.audit_column_lineage_daily d WHERE "
+                + "d.target_table = 'chunk_t'"), "only the rewritten stage reaches the daily facts");
+    }
+
     private void writeBatch(String batchId, List<LineageRow> rows) {
         sink.writeBatchLineage(batchId, hour, rows);
         sink.writeBatchLineage(batchId, hour, rows);

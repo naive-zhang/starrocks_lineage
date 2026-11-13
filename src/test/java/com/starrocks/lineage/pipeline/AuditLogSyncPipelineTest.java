@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -294,7 +295,8 @@ class AuditLogSyncPipelineTest {
             assertEquals("node-b", checkpoint().getOwner());
             assertEquals(1, wh.accessCount(hour(YESTERDAY), "amount"));
             assertEquals(1, wh.lineage.values().stream().filter(l -> l.target.getColumn().equals("gmv"))
-                    .findFirst().get().execCount, "node-a's late write reused the label and was dropped");
+                    .findFirst().get().execCount, "node-a's late stage write is an idempotent upsert and it "
+                    + "is fenced before its daily insert");
             assertEquals(CycleReport.Outcome.LEASE_NOT_ACQUIRED, a.runOnce().getOutcome());
         }
 
@@ -362,18 +364,42 @@ class AuditLogSyncPipelineTest {
 
         @Test
         void loadStillInFlightIsRetriedLaterAndLaterStepsAreNotGuarded() {
-            audit(YESTERDAY.plusMinutes(1), "alice", INSERT);
-            wh.crashAfter.put("lineage", 1);
+            audit(YESTERDAY.plusMinutes(1), "alice", QUERY);
+            audit(YESTERDAY.plusMinutes(2), "bob", INSERT);
+            wh.crashAfter.put("usage", 1);
             AuditLogSyncPipeline p = pipeline();
             assertThrows(PipelineException.class, p::runOnce);
             String batch = checkpoint().getPending().get().getBatchId();
-            wh.labelStates.put(batch + "_lineage", StreamLoadClient.LoadState.IN_PROGRESS);
+            wh.labelStates.put(batch + "_usage", StreamLoadClient.LoadState.IN_PROGRESS);
             PipelineException inFlight = assertThrows(PipelineException.class, p::runOnce);
             assertTrue(inFlight.isRetryable());
             assertTrue(inFlight.getMessage().contains("in flight"));
             wh.labelStates.clear();
             assertEquals(CycleReport.Outcome.COMMITTED, p.runOnce().getOutcome());
-            assertEquals(1, wh.ops("lineage"));
+            assertEquals(1, wh.ops("usage"), "the committed usage label is not loaded again");
+            assertEquals(1, wh.accessCount(hour(YESTERDAY), "amount"));
+            assertEquals(1, wh.ops("daily"));
+        }
+
+        @Test
+        void crashBetweenLineageChunksIsClearedAndRewrittenOnResume() {
+            audit(YESTERDAY.plusMinutes(1), "alice", INSERT);
+            wh.crashAfter.put("lineage", 1);
+            AuditLogSyncPipeline p = pipeline();
+            assertThrows(PipelineException.class, p::runOnce);
+            String batch = checkpoint().getPending().get().getBatchId();
+            assertTrue(wh.batchLineage.values().stream().anyMatch(c -> c.batchId.equals(batch)),
+                    "a part of the stage was loaded before the crash");
+            // the stage of an earlier attempt may differ from what the resume derives (e.g. a chunk of an edge the
+            // fixed metadata no longer produces): it must not survive
+            LineageRow stale = wh.batchLineage.values().iterator().next().row;
+            wh.batchLineage.put("stale", new FakeWarehouse.LineageRowCell(batch, stale, false));
+
+            assertEquals(CycleReport.Outcome.COMMITTED, p.runOnce().getOutcome());
+            assertEquals(1, wh.ops("clear_lineage"));
+            assertFalse(wh.batchLineage.containsKey("stale"));
+            assertEquals(1, wh.lineage.values().stream().filter(l -> l.target.getColumn().equals("gmv"))
+                    .findFirst().get().execCount, "every edge counted once");
             assertEquals(1, wh.ops("daily"));
         }
 
@@ -565,16 +591,187 @@ class AuditLogSyncPipelineTest {
             wh.usage.get(hour(YESTERDAY.plusHours(1)) + "|amount").access += 40;
             wh.crashAfter.put("purge_usage", 1);
             assertThrows(PipelineException.class, () -> p.rebuild(YESTERDAY, TODAY));
-            CycleReport rebuilt = p.runOnce();
-            assertEquals(BatchKind.REBUILD, rebuilt.getKind().get());
-            assertEquals(3, rebuilt.getRecords());
+            assertEquals(YESTERDAY, checkpoint().getPending().get().getRangeStart());
+            // run / the daemon resume the pending hour and complete its day (the chain of hours)
+            List<CycleReport> resumed = drain(p);
+            assertEquals(24, resumed.stream().filter(r -> r.getKind().orElse(null) == BatchKind.REBUILD).count());
+            assertEquals(3, resumed.stream().filter(r -> r.getKind().orElse(null) == BatchKind.REBUILD)
+                    .mapToInt(CycleReport::getRecords).sum());
             assertEquals(usage, wh.usageSnapshot());
             assertEquals(lineage, wh.lineageSnapshot(), "lineage recomputed from both days of facts");
 
             CycleReport twice = p.rebuild(YESTERDAY, TODAY);
             assertEquals(CycleReport.Outcome.COMMITTED, twice.getOutcome());
+            assertEquals(YESTERDAY.plusHours(23), twice.getRangeStart().get(), "the last hour of the day");
             assertEquals(usage, wh.usageSnapshot(), "a rebuild is repeatable");
             assertEquals(lineage, wh.lineageSnapshot());
+            assertFalse(checkpoint().getPending().isPresent());
+        }
+
+        @Test
+        void rebuildRunsOneBatchPerHourAndReportsEachHour() {
+            audit(YESTERDAY.plusHours(1), "alice", QUERY);
+            audit(YESTERDAY.plusHours(3), "alice", INSERT);
+            audit(TODAY.plusHours(1), "carol", INSERT);
+            AuditLogSyncPipeline p = pipeline();
+            drain(p);
+            clock.advance(Duration.ofDays(1));
+            drain(p);
+            Map<String, String> usage = wh.usageSnapshot();
+            Map<String, String> lineage = wh.lineageSnapshot();
+            int purges = wh.ops("purge_usage");
+            List<String> hours = new ArrayList<>();
+
+            CycleReport last = p.rebuild(YESTERDAY, TODAY.plusDays(1), (r, done, total) -> {
+                assertEquals(48, total);
+                assertEquals(hours.size() + 1, done);
+                hours.add(r.getRangeStart().get() + "/" + r.getRangeEnd().get());
+            });
+
+            assertEquals(48, hours.size());
+            assertEquals(YESTERDAY + "/" + YESTERDAY.plusHours(1), hours.get(0));
+            assertEquals(TODAY.plusHours(23) + "/" + TODAY.plusDays(1), hours.get(47));
+            assertEquals(TODAY.plusHours(23), last.getRangeStart().get());
+            assertEquals(purges + 2, wh.ops("purge_usage"), "one purge per day, by its first hour");
+            assertEquals(usage, wh.usageSnapshot());
+            assertEquals(lineage, wh.lineageSnapshot());
+            assertTrue(wh.batchLog.values().stream().filter(b -> b.getKind() == BatchKind.REBUILD)
+                    .allMatch(b -> Duration.between(b.getRangeStart(), b.getRangeEnd()).equals(Duration.ofHours(1))));
+        }
+
+        @Test
+        void interruptedRebuildResumesFromTheInterruptedHour() {
+            audit(YESTERDAY.plusHours(1), "alice", QUERY);
+            audit(YESTERDAY.plusHours(5), "bob", QUERY);
+            audit(YESTERDAY.plusHours(7), "alice", INSERT);
+            audit(TODAY.plusHours(1), "carol", INSERT);
+            AuditLogSyncPipeline p = pipeline();
+            drain(p);
+            clock.advance(Duration.ofDays(1));
+            drain(p);
+            Map<String, String> usage = wh.usageSnapshot();
+            Map<String, String> lineage = wh.lineageSnapshot();
+            // hour 01 writes its usage, hour 05 crashes right after its usage load committed
+            wh.beforeOp.put("usage", () -> wh.beforeOp.put("usage", () -> wh.crashAfter.put("usage", 1)));
+            assertThrows(PipelineException.class, () -> p.rebuild(YESTERDAY, TODAY.plusDays(1)));
+            CheckpointStore.PendingBatch interrupted = checkpoint().getPending().get();
+            assertEquals(BatchKind.REBUILD, interrupted.getKind());
+            assertEquals(YESTERDAY.plusHours(5), interrupted.getRangeStart());
+            assertEquals(BatchStep.DICTIONARY, interrupted.getStep());
+            int hours = (int) wh.batchLog.values().stream().filter(b -> b.getKind() == BatchKind.REBUILD).count();
+            int purges = wh.ops("purge_usage");
+
+            List<String> resumed = new ArrayList<>();
+            p.rebuild(YESTERDAY, TODAY.plusDays(1), (r, done, total) -> {
+                assertEquals(43, total, "19 hours left of the first day, then the second day");
+                resumed.add(r.getRangeStart().get().toString());
+            });
+
+            assertEquals(YESTERDAY.plusHours(5).toString(), resumed.get(0), "the interrupted hour first");
+            assertEquals(43, resumed.size());
+            assertEquals(purges + 1, wh.ops("purge_usage"), "the first day is not purged again");
+            assertEquals(5, hours, "hours 00..04 were committed before the crash");
+            assertEquals(usage, wh.usageSnapshot(), "the usage label of the interrupted hour is not loaded twice");
+            assertEquals(lineage, wh.lineageSnapshot());
+        }
+
+        @Test
+        void rebuildOutsideTheInterruptedDayCompletesThatDayFirst() {
+            audit(YESTERDAY.plusHours(1), "alice", QUERY);
+            audit(YESTERDAY.plusHours(5), "alice", INSERT);
+            audit(TODAY.plusHours(1), "carol", QUERY);
+            AuditLogSyncPipeline p = pipeline();
+            drain(p);
+            clock.advance(Duration.ofDays(1));
+            drain(p);
+            Map<String, String> usage = wh.usageSnapshot();
+            Map<String, String> lineage = wh.lineageSnapshot();
+            wh.crashAfter.put("lineage", 1);
+            assertThrows(PipelineException.class, () -> p.rebuild(YESTERDAY, TODAY));
+            assertEquals(YESTERDAY.plusHours(5), checkpoint().getPending().get().getRangeStart());
+
+            List<LocalDateTime> starts = new ArrayList<>();
+            p.rebuild(TODAY, TODAY.plusDays(1), (r, done, total) -> starts.add(r.getRangeStart().get()));
+
+            assertEquals(19 + 24, starts.size(), "the rest of the interrupted day, then the requested one");
+            assertEquals(YESTERDAY.plusHours(5), starts.get(0));
+            assertEquals(TODAY, starts.get(19));
+            assertEquals(usage, wh.usageSnapshot());
+            assertEquals(lineage, wh.lineageSnapshot());
+        }
+
+        @Test
+        void rebuildReadsWithSeveralThreadsAndReportsProgress() {
+            for (int i = 0; i < 40; i++) {
+                audit(YESTERDAY.plusHours(2).plusMinutes(i), "u" + (i % 3), i % 4 == 0 ? INSERT : QUERY);
+            }
+            AuditLogSyncPipeline single = pipeline();
+            drain(single);
+            Map<String, String> usage = wh.usageSnapshot();
+            Map<String, String> lineage = wh.lineageSnapshot();
+            single.close();
+
+            AuditLogSyncPipeline p = pipeline(config("node-a").readThreads(4).progressInterval(Duration.ofNanos(1))
+                    .build());
+            List<AuditLogSyncPipeline.Progress> progress = new java.util.concurrent.CopyOnWriteArrayList<>();
+            p.setProgressListener(progress::add);
+            p.rebuild(YESTERDAY, TODAY);
+
+            assertEquals(usage, wh.usageSnapshot(), "parallel readers analyse every record exactly once");
+            assertEquals(lineage, wh.lineageSnapshot());
+            List<AuditLogSyncPipeline.Progress> hour2 = progress.stream()
+                    .filter(x -> x.getBatch().getRangeStart().equals(YESTERDAY.plusHours(2)))
+                    .collect(Collectors.toList());
+            AuditLogSyncPipeline.Progress done = hour2.get(hour2.size() - 1);
+            assertTrue(done.isFinished());
+            assertEquals(40, done.getAnalysed());
+            assertEquals(40, done.getTotal());
+            assertTrue(done.toString().startsWith("PROGRESS REBUILD [" + YESTERDAY.plusHours(2)));
+            assertTrue(done.toString().contains("analysed=40/40 (100.0%)"));
+            assertTrue(hour2.size() > 1, "intermediate progress was reported");
+        }
+
+        @Test
+        void aLongRebuildHourRenewsItsLeaseAndStopsWhenItIsLost() {
+            for (int i = 0; i < 20; i++) {
+                audit(YESTERDAY.plusHours(2).plusMinutes(i), "u", QUERY);
+            }
+            AuditLogSyncPipeline p = pipeline(config("node-a").progressInterval(Duration.ofNanos(1)).build());
+            drain(p);
+            AuditLogSyncPipeline standby = pipeline(config("node-b").build());
+            // the analysis of hour 02 outlives the lease TTL; the standby can only take over when node-a stopped
+            // renewing
+            p.setProgressListener(progress -> {
+                if (progress.getBatch().getRangeStart().equals(YESTERDAY.plusHours(2)) && !progress.isFinished()) {
+                    clock.advance(Duration.ofMinutes(6));
+                    assertEquals(CycleReport.Outcome.LEASE_NOT_ACQUIRED, standby.runOnce().getOutcome());
+                }
+            });
+            p.rebuild(YESTERDAY, TODAY);
+            assertEquals("node-a", checkpoint().getOwner());
+
+            p.setProgressListener(progress -> {
+                if (progress.getBatch().getRangeStart().equals(YESTERDAY.plusHours(2)) && !progress.isFinished()) {
+                    clock.advance(Duration.ofMinutes(11));
+                    standby.runOnce();
+                }
+            });
+            assertThrows(LeaseLostException.class, () -> p.rebuild(YESTERDAY, TODAY));
+            assertEquals("node-b", checkpoint().getOwner());
+        }
+
+        @Test
+        void readerFailureFailsTheHourRetryably() {
+            audit(YESTERDAY.plusHours(1), "alice", QUERY);
+            AuditLogSyncPipeline p = pipeline();
+            drain(p);
+            Map<String, String> usage = wh.usageSnapshot();
+            wh.failFetchProcessed = 1;
+            PipelineException e = assertThrows(PipelineException.class, () -> p.rebuild(YESTERDAY, TODAY));
+            assertTrue(e.isRetryable());
+            assertEquals(YESTERDAY, checkpoint().getPending().get().getRangeStart());
+            p.rebuild(YESTERDAY, TODAY);
+            assertEquals(usage, wh.usageSnapshot());
         }
 
         @Test

@@ -135,7 +135,7 @@ public final class StreamLoadClient implements Closeable {
         }
         if (body.length > LARGE_BODY_BYTES) {
             LOG.warn("stream load {} to {}.{} is {} MB: JSON loads are limited by streaming_load_max_batch_size_mb "
-                    + "(100 MB by default) - reduce sliceSize", label, db, table, body.length / (1024 * 1024));
+                    + "(100 MB by default)", label, db, table, body.length / (1024 * 1024));
         }
         URI fe = feHttpUrl.resolve("/api/" + db + "/" + table + "/_stream_load");
         String probeLabel = (label.length() <= 122 ? label : label.substring(0, 122)) + "_route";

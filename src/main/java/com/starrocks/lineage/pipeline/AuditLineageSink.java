@@ -32,8 +32,15 @@ public interface AuditLineageSink {
      */
     StreamLoadClient.Result writeUsage(String batchId, List<HourlyUsageRow> rows);
 
-    /** Upserts the lineage contribution of the batch (PRIMARY KEY: idempotent). */
+    /**
+     * Upserts the lineage contribution of the batch (PRIMARY KEY: idempotent). May be split into several loads (the
+     * lineage of a busy day exceeds the BE limit of one load), so it is not atomic: a resumed batch calls
+     * {@link #clearBatchLineage} first.
+     */
     StreamLoadClient.Result writeBatchLineage(String batchId, LocalDateTime batchTime, List<LineageRow> rows);
+
+    /** Deletes the lineage contribution of the batch (not its refresh-only rows); idempotent. */
+    void clearBatchLineage(String batchId);
 
     /**
      * REBUILD: records every edge with daily rows in {@code [fromDay, toDay)} as refresh-only rows of the batch, so

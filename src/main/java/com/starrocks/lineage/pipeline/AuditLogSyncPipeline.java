@@ -28,6 +28,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -36,7 +38,9 @@ import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 /**
@@ -55,9 +59,10 @@ import java.util.stream.Collectors;
  *       read;</li>
  *   <li>records that already have a dead letter from this batch are not analysed again, so the dead-letter set and
  *       the usage / lineage written by different attempts never overlap;</li>
- *   <li>the additive steps (USAGE, LINEAGE_STAGE, LINEAGE_DAILY) ask the FE for their label state first: committed →
+ *   <li>the additive steps (USAGE, LINEAGE_DAILY) ask the FE for their label state first: committed →
  *       skipped; in flight → retried later; aborted or never seen → executed; unknown after the label retention →
- *       {@link BatchBlockedException} (operator: {@link #resolveBlockedStep});</li>
+ *       {@link BatchBlockedException} (operator: {@link #resolveBlockedStep}); the lineage stage (a PRIMARY KEY
+ *       upsert written in chunks) is cleared and written again;</li>
  *   <li>once LINEAGE_STAGE is complete nothing is analysed any more: the daily facts and the lineage table derive
  *       from the persisted stage.</li>
  * </ul>
@@ -79,8 +84,11 @@ public final class AuditLogSyncPipeline implements AutoCloseable {
             StatementType.CREATE_VIEW, StatementType.ALTER_VIEW, StatementType.CREATE_MATERIALIZED_VIEW);
     private static final Set<DeadLetter.Kind> REPAIRABLE = EnumSet.of(DeadLetter.Kind.PARSE_ERROR,
             DeadLetter.Kind.ANALYSIS_ERROR);
-    private static final Set<BatchStep> GUARDED_STEPS = EnumSet.of(BatchStep.USAGE, BatchStep.LINEAGE_STAGE,
-            BatchStep.LINEAGE_DAILY);
+    /**
+     * Additive steps whose replay must ask the FE for the label state. LINEAGE_STAGE is not one: it is a PRIMARY KEY
+     * upsert loaded in chunks, and a resumed batch clears it before writing it again.
+     */
+    private static final Set<BatchStep> GUARDED_STEPS = EnumSet.of(BatchStep.USAGE, BatchStep.LINEAGE_DAILY);
     private static final int DEAD_LETTER_CHUNK = 1_000;
 
     /**
@@ -102,6 +110,7 @@ public final class AuditLogSyncPipeline implements AutoCloseable {
     private final Clock clock;
     private final ExecutorService analysisPool;
     private final PipelineMetrics metrics = new PipelineMetrics();
+    private volatile Consumer<Progress> progressListener = p -> { };
     private final Object cycleLock = new Object();
     private ScheduledExecutorService scheduler;
 
@@ -121,6 +130,24 @@ public final class AuditLogSyncPipeline implements AutoCloseable {
 
     public PipelineMetrics getMetrics() {
         return metrics;
+    }
+
+    /** Receives the periodic progress of long batches (a rebuild hour) in addition to the log line. */
+    public void setProgressListener(Consumer<Progress> listener) {
+        this.progressListener = Objects.requireNonNull(listener, "listener");
+    }
+
+    /**
+     * Receives every batch a {@link #rebuild} commits.
+     */
+    @FunctionalInterface
+    public interface RebuildListener {
+        /**
+         * @param report     the committed (or BLOCKED) hour
+         * @param hoursDone  hours of this rebuild call completed so far
+         * @param hoursTotal hours this rebuild call has to process
+         */
+        void hourDone(CycleReport report, int hoursDone, int hoursTotal);
     }
 
     // ============================================================================================ cycle
@@ -273,6 +300,14 @@ public final class AuditLogSyncPipeline implements AutoCloseable {
                     0);
             metrics.recordSkip();
             LOG.warn("batch {} skipped by operator: {}", p, reason);
+            if (p.getKind() == BatchKind.REBUILD && !(isDayStart(p.getRangeStart())
+                    && !p.getStep().isAfter(BatchStep.INTENT))) {
+                // the purge of the day already happened (by this batch or by the first hour of its day)
+                LocalDateTime day = p.getRangeStart().truncatedTo(ChronoUnit.DAYS);
+                LOG.warn("ALERT the rebuild stopped at {}: usage and daily lineage of [{}, {}) are missing until "
+                        + "these days are rebuilt again (rebuild {} {})", p.getRangeStart(), p.getRangeStart(),
+                        ceilDay(p.getRangeEnd()), day.toLocalDate(), ceilDay(p.getRangeEnd()).toLocalDate());
+            }
             return CycleReport.committed(p, 0, Collections.emptyMap(), 0, 0, 1, 0, true);
         }
     }
@@ -326,33 +361,129 @@ public final class AuditLogSyncPipeline implements AutoCloseable {
         }
     }
 
-    /**
-     * Operator: recomputes whole days {@code [fromDay, toDay)} from the batch membership (after an analyzer change).
-     * Usage and daily lineage of the days are purged and rebuilt; the lineage table is refreshed for every edge that
-     * had or has facts in those days. Refused when audit records of members are gone (audit retention), since the
-     * rebuild would then lose data.
-     */
+    /** {@link #rebuild(LocalDateTime, LocalDateTime, RebuildListener)} without a listener. */
     public CycleReport rebuild(LocalDateTime fromDay, LocalDateTime toDay) {
+        return rebuild(fromDay, toDay, (r, done, total) -> { });
+    }
+
+    /**
+     * Operator: recomputes whole days {@code [fromDay, toDay)} from the batch membership (after an analyzer change),
+     * one REBUILD batch per hour.
+     *
+     * <p>The first hour of a day purges the usage and the daily lineage of the whole day and records every edge with
+     * facts that day for a refresh; every hour then adds its own usage and lineage and refreshes the edges it
+     * touched. The hours of a day form a chain: each one commits and declares the next in one checkpoint write, so
+     * an interrupted day is completed by whoever resumes the pending batch (this method, {@code run} or the daemon)
+     * and a day is never left half rebuilt. While a day is being rebuilt its usage and lineage are partial.</p>
+     *
+     * <p>Interrupted rebuilds resume: when a REBUILD batch is pending its day is completed first; when that day lies
+     * in {@code [fromDay, toDay)} the rebuild continues with the next day, otherwise it starts at {@code fromDay}.
+     * Refused when audit records of members are gone (audit retention), since the rebuild would lose data.</p>
+     *
+     * @return the report of the last hour (BLOCKED stops the rebuild), or IDLE when there was nothing to do
+     */
+    public CycleReport rebuild(LocalDateTime fromDay, LocalDateTime toDay, RebuildListener listener) {
+        Objects.requireNonNull(listener, "listener");
         synchronized (cycleLock) {
             requireLease();
-            CheckpointStore.Checkpoint cp = checkpoint();
-            requireNoPending();
-            if (!fromDay.equals(fromDay.truncatedTo(ChronoUnit.DAYS))
-                    || !toDay.equals(toDay.truncatedTo(ChronoUnit.DAYS)) || !fromDay.isBefore(toDay)) {
+            if (!isDayStart(fromDay) || !isDayStart(toDay) || !fromDay.isBefore(toDay)) {
                 throw new IllegalArgumentException("rebuild needs whole days fromDay < toDay");
             }
+            CheckpointStore.Checkpoint cp = checkpoint();
             if (toDay.isAfter(cp.getCommittedUntil())) {
                 throw new IllegalArgumentException("days up to " + toDay + " are not committed yet (watermark "
                         + cp.getCommittedUntil() + ")");
             }
-            requireAuditComplete(fromDay, toDay);
+            LocalDateTime first = fromDay;
+            CheckpointStore.PendingBatch interrupted = cp.getPending().orElse(null);
+            if (interrupted != null && interrupted.getKind() != BatchKind.REBUILD) {
+                throw new IllegalStateException("batch " + interrupted + " is pending: let it finish (or skip it) "
+                        + "first");
+            }
+            if (interrupted != null && !interrupted.getRangeStart().isBefore(fromDay)
+                    && interrupted.getRangeStart().isBefore(toDay)) {
+                first = ceilDay(interrupted.getRangeEnd());
+            }
+            for (LocalDateTime day = first; day.isBefore(toDay); day = day.plusDays(1)) {
+                requireAuditComplete(day, day.plusDays(1));
+            }
+            int total = (int) (ChronoUnit.HOURS.between(first, max(first, toDay))
+                    + (interrupted == null ? 0 : remainingHours(interrupted)));
+            int[] done = {0};
+            CycleReport last = CycleReport.idle("nothing to rebuild in [" + fromDay + ", " + toDay + ")");
+            if (interrupted != null) {
+                LOG.info("completing the interrupted rebuild of day {} first, from {}",
+                        interrupted.getRangeStart().toLocalDate(), interrupted.getRangeStart());
+                last = completeRebuildChain(listener, done, total);
+                if (last.getOutcome() == CycleReport.Outcome.BLOCKED) {
+                    return last;
+                }
+                if (first.isAfter(fromDay)) {
+                    LOG.info("days [{}, {}) were rebuilt by the interrupted run: continuing at {}", fromDay, first,
+                            first);
+                }
+            }
+            // a rebuild follows an analyzer or metadata fix: never re-analyse with cached schemas
             metadata.invalidateAll();
-            CheckpointStore.PendingBatch batch = CheckpointStore.PendingBatch.declare(
-                    batchId(name(), BatchKind.REBUILD.name(), nonce(), fromDay.toString(), toDay.toString()),
-                    BatchKind.REBUILD, fromDay, toDay, now());
-            checkpoints.savePending(name(), owner(), ttl(), batch);
-            return execute(batch, false, Declared.NONE);
+            for (LocalDateTime day = first; day.isBefore(toDay); day = day.plusDays(1)) {
+                CheckpointStore.PendingBatch batch = declareRebuildHour(day);
+                checkpoints.savePending(name(), owner(), ttl(), batch);
+                last = execute(batch, false, Declared.NONE);
+                listener.hourDone(last, ++done[0], total);
+                if (last.getOutcome() == CycleReport.Outcome.BLOCKED) {
+                    return last;
+                }
+                last = completeRebuildChain(listener, done, total);
+                if (last.getOutcome() == CycleReport.Outcome.BLOCKED) {
+                    return last;
+                }
+                LOG.info("REBUILD day {} complete ({}/{} hours); to resume after an interruption from here: rebuild "
+                        + "{} {}", day.toLocalDate(), done[0], total, day.plusDays(1).toLocalDate(),
+                        toDay.toLocalDate());
+            }
+            return last;
         }
+    }
+
+    /** Executes pending REBUILD hours until the chain of the day ends. */
+    private CycleReport completeRebuildChain(RebuildListener listener, int[] done, int total) {
+        CycleReport last = null;
+        Optional<CheckpointStore.PendingBatch> pending;
+        while ((pending = checkpoint().getPending()).isPresent() && pending.get().getKind() == BatchKind.REBUILD) {
+            CheckpointStore.PendingBatch p = pending.get();
+            // a chained hour that has not started is a first attempt; anything else may have written already
+            last = execute(p, p.getStep().isAfter(BatchStep.INTENT) || p.getAttempts() > 0, Declared.NONE);
+            listener.hourDone(last, ++done[0], total);
+            if (last.getOutcome() == CycleReport.Outcome.BLOCKED) {
+                return last;
+            }
+        }
+        return last == null ? CycleReport.idle("no rebuild hour pending") : last;
+    }
+
+    private CheckpointStore.PendingBatch declareRebuildHour(LocalDateTime start) {
+        LocalDateTime end = min(start.truncatedTo(ChronoUnit.HOURS).plusHours(1),
+                start.truncatedTo(ChronoUnit.DAYS).plusDays(1));
+        return CheckpointStore.PendingBatch.declare(batchId(name(), BatchKind.REBUILD.name(), nonce(),
+                start.toString(), end.toString()), BatchKind.REBUILD, start, end, now());
+    }
+
+    /** @return batches left in the chain of an interrupted REBUILD (one for a multi-day batch of an older version) */
+    private static int remainingHours(CheckpointStore.PendingBatch p) {
+        if (ChronoUnit.HOURS.between(p.getRangeStart(), p.getRangeEnd()) > 1) {
+            return 1;
+        }
+        return (int) Math.max(1, ChronoUnit.HOURS.between(p.getRangeStart().truncatedTo(ChronoUnit.HOURS),
+                ceilDay(p.getRangeEnd())));
+    }
+
+    static boolean isDayStart(LocalDateTime t) {
+        return t.equals(t.truncatedTo(ChronoUnit.DAYS));
+    }
+
+    /** @return {@code t} if it starts a day, else the start of the next day */
+    static LocalDateTime ceilDay(LocalDateTime t) {
+        return isDayStart(t) ? t : t.truncatedTo(ChronoUnit.DAYS).plusDays(1);
     }
 
     private void requireAuditComplete(LocalDateTime from, LocalDateTime to) {
@@ -456,11 +587,7 @@ public final class AuditLogSyncPipeline implements AutoCloseable {
             }
             case REBUILD: {
                 if (!step.isAfter(BatchStep.INTENT)) {
-                    requireAuditCompleteOrBlock(p);
-                    checkpoints.verifyLease(name(), owner(), ttl());
-                    sink.recordEdgesForRefresh(id, p.getSince(), p.getRangeStart(), p.getRangeEnd());
-                    sink.purgeLineageDaily(p.getRangeStart(), p.getRangeEnd());
-                    sink.purgeUsage(p.getRangeStart(), p.getRangeEnd());
+                    prepareRebuild(p);
                     advance(p, BatchStep.PREPARE);
                 }
                 records = analyse ? analyseProcessed(p, acc) : 0;
@@ -483,9 +610,6 @@ public final class AuditLogSyncPipeline implements AutoCloseable {
             if (!usageDone && (!usageRows.isEmpty() || queryFailures)) {
                 usageDone = !mayWrite(p, replay, BatchStep.USAGE, "usage");
             }
-            if (!lineageDone && (!lineageRows.isEmpty() || writeFailures)) {
-                lineageDone = !mayWrite(p, replay, BatchStep.LINEAGE_STAGE, "lineage");
-            }
             writeFailures(p, acc, usageDone, lineageDone);
         }
         if (step.ordinal() < BatchStep.DEAD_LETTERS.ordinal()) {
@@ -506,7 +630,12 @@ public final class AuditLogSyncPipeline implements AutoCloseable {
             advance(p, BatchStep.USAGE);
         }
         if (step.ordinal() < BatchStep.LINEAGE_STAGE.ordinal()) {
-            if (!lineageRows.isEmpty() && !lineageDone) {
+            if (replay) {
+                // an earlier attempt may have loaded some chunks: start from an empty stage
+                checkpoints.verifyLease(name(), owner(), ttl());
+                sink.clearBatchLineage(id);
+            }
+            if (!lineageRows.isEmpty()) {
                 checkpoints.verifyLease(name(), owner(), ttl());
                 filtered += filteredRows(sink.writeBatchLineage(id, p.getSince(), lineageRows));
             }
@@ -521,7 +650,7 @@ public final class AuditLogSyncPipeline implements AutoCloseable {
             advance(p, BatchStep.LINEAGE_DAILY);
         }
         if (step.ordinal() < BatchStep.REFRESH.ordinal()) {
-            if (!lineageKnownEmpty || p.getKind() == BatchKind.REBUILD) {
+            if (!lineageKnownEmpty || (p.getKind() == BatchKind.REBUILD && isDayStart(p.getRangeStart()))) {
                 checkpoints.verifyLease(name(), owner(), ttl());
                 sink.refreshLineage(id);
             }
@@ -536,8 +665,16 @@ public final class AuditLogSyncPipeline implements AutoCloseable {
         sink.writeBatchLog(new BatchLogEntry(id, p.getKind(), p.getRangeStart(), p.getRangeEnd(), records,
                 acc.succeeded, acc.skipped, acc.failed, acc.degraded, usageRows.size(), lineageRows.size(),
                 acc.letters.size(), filtered, p.getAttempts() + 1, p.getSince(), now));
-        checkpoints.commit(name(), owner(), ttl(), id, p.getKind().advancesWatermark() ? p.getRangeEnd() : null,
-                p.getKind() == BatchKind.REBUILD || p.getKind() == BatchKind.REPAIR ? 0 : records);
+        if (p.getKind() == BatchKind.REBUILD && !isDayStart(p.getRangeEnd())) {
+            // the rest of the day was purged: its next hour is declared atomically with this commit
+            CheckpointStore.PendingBatch next = declareRebuildHour(p.getRangeEnd());
+            checkpoints.commitAndDeclare(name(), owner(), ttl(), id, 0, next);
+            LOG.info("rebuild hour [{}, {}) committed; next hour {} declared", p.getRangeStart(), p.getRangeEnd(),
+                    next.getBatchId());
+        } else {
+            checkpoints.commit(name(), owner(), ttl(), id, p.getKind().advancesWatermark() ? p.getRangeEnd() : null,
+                    p.getKind() == BatchKind.REBUILD || p.getKind() == BatchKind.REPAIR ? 0 : records);
+        }
         metrics.recordCommit(p.getKind(), records, lineageRows.size(), usageRows.size(), acc.letters.size(),
                 filtered, replay);
         return CycleReport.committed(p, records, acc.statuses, usageRows.size(), lineageRows.size(),
@@ -583,12 +720,31 @@ public final class AuditLogSyncPipeline implements AutoCloseable {
         }
     }
 
-    private void requireAuditCompleteOrBlock(CheckpointStore.PendingBatch p) {
+    private void requireAuditCompleteOrBlock(LocalDateTime from, LocalDateTime to) {
         try {
-            requireAuditComplete(p.getRangeStart(), p.getRangeEnd());
+            requireAuditComplete(from, to);
         } catch (IllegalStateException e) {
             throw new BatchBlockedException(e.getMessage());
         }
+    }
+
+    /**
+     * PREPARE of a REBUILD batch. A batch starting a day purges the whole day (usage and daily lineage) and records
+     * its edges for the refresh; the following hours of the day only add. A REBUILD declared by an earlier version
+     * spans whole days and is handled by the same rule.
+     */
+    private void prepareRebuild(CheckpointStore.PendingBatch p) {
+        LocalDateTime start = p.getRangeStart();
+        if (!isDayStart(start)) {
+            requireAuditCompleteOrBlock(start, p.getRangeEnd());
+            return;
+        }
+        LocalDateTime end = ceilDay(p.getRangeEnd());
+        requireAuditCompleteOrBlock(start, end);
+        checkpoints.verifyLease(name(), owner(), ttl());
+        sink.recordEdgesForRefresh(p.getBatchId(), p.getSince(), start, end);
+        sink.purgeLineageDaily(start, end);
+        sink.purgeUsage(start, end);
     }
 
     // ------------------------------------------------------------------------------------------- records
@@ -642,19 +798,174 @@ public final class AuditLogSyncPipeline implements AutoCloseable {
                 p.getRangeEnd(), p.getBatchId(), Integer.MAX_VALUE);
     }
 
-    /** REBUILD: every member record of the days, page by page (only the aggregates stay in memory). */
+    /**
+     * REBUILD: every member record of the range. The range is cut into {@code sliceSize} windows read by
+     * {@code readThreads} parallel readers (each a keyset scan of its own window, so no read re-scans what was read
+     * before); pages go through a bounded queue to this thread, which analyses them on the analysis pool. Only the
+     * aggregates and at most {@code 2 * readThreads} pages stay in memory. Progress is reported every
+     * {@code progressInterval}.
+     */
     private int analyseProcessed(CheckpointStore.PendingBatch p, Accumulator acc) {
-        int n = 0;
-        Watermark cursor = Watermark.startingAt(p.getRangeStart());
-        while (true) {
-            List<AuditLogRecord> page = source.fetchProcessed(name(), p.getRangeStart(), p.getRangeEnd(), cursor,
-                    config.getPageSize());
-            analyseAll(page, acc);
-            n += page.size();
-            if (page.size() < config.getPageSize()) {
-                return n;
+        List<LocalDateTime> starts = new ArrayList<>();
+        for (LocalDateTime t = p.getRangeStart(); t.isBefore(p.getRangeEnd()); t = t.plus(config.getSliceSize())) {
+            starts.add(t);
+        }
+        if (starts.isEmpty()) {
+            return 0;
+        }
+        long total = source.countMembers(name(), p.getRangeStart(), p.getRangeEnd());
+        BlockingQueue<Object> queue = new ArrayBlockingQueue<>(2 * config.getReadThreads());
+        AtomicBoolean cancelled = new AtomicBoolean();
+        ExecutorService readers = Executors.newFixedThreadPool(Math.min(config.getReadThreads(), starts.size()),
+                namedThreads("audit-reader"));
+        Progress progress = new Progress(p, total);
+        int analysed = 0;
+        try {
+            for (LocalDateTime start : starts) {
+                LocalDateTime end = min(start.plus(config.getSliceSize()), p.getRangeEnd());
+                readers.execute(() -> readWindow(start, end, queue, cancelled));
             }
-            cursor = last(page);
+            int finished = 0;
+            long nextReport = System.nanoTime() + config.getProgressInterval().toNanos();
+            while (finished < starts.size()) {
+                Object item = queue.poll(200, TimeUnit.MILLISECONDS);
+                if (item == WINDOW_DONE) {
+                    finished++;
+                } else if (item instanceof Throwable) {
+                    Throwable cause = (Throwable) item;
+                    throw cause instanceof PipelineException ? (PipelineException) cause
+                            : new PipelineException("reading the audit records of " + p.getBatchId() + " failed: "
+                            + cause, cause);
+                } else if (item != null) {
+                    @SuppressWarnings("unchecked")
+                    List<AuditLogRecord> page = (List<AuditLogRecord>) item;
+                    analyseAll(page, acc);
+                    analysed += page.size();
+                }
+                if (System.nanoTime() >= nextReport) {
+                    // a long analysis keeps its lease (a standby must not take over a live rebuild) and stops at
+                    // once when it was lost
+                    checkpoints.verifyLease(name(), owner(), ttl());
+                    report(progress.at(analysed, false));
+                    nextReport = System.nanoTime() + config.getProgressInterval().toNanos();
+                }
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new PipelineException("rebuild interrupted", e);
+        } finally {
+            cancelled.set(true);
+            readers.shutdownNow();
+        }
+        report(progress.at(analysed, true));
+        return analysed;
+    }
+
+    private static final Object WINDOW_DONE = new Object();
+
+    /** One reader task: the member records of {@code [start, end)}, page by page, then {@link #WINDOW_DONE}. */
+    private void readWindow(LocalDateTime start, LocalDateTime end, BlockingQueue<Object> queue,
+                            AtomicBoolean cancelled) {
+        try {
+            Watermark cursor = Watermark.startingAt(start);
+            while (!cancelled.get()) {
+                List<AuditLogRecord> page = source.fetchProcessed(name(), start, end, cursor, config.getPageSize());
+                if (!page.isEmpty()) {
+                    queue.put(page);
+                }
+                if (page.size() < config.getPageSize()) {
+                    break;
+                }
+                cursor = last(page);
+            }
+            queue.put(WINDOW_DONE);
+        } catch (InterruptedException e) {
+            // cancelled by the consumer
+            Thread.currentThread().interrupt();
+        } catch (RuntimeException | Error e) {
+            if (!cancelled.get()) {
+                try {
+                    queue.put(e);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        }
+    }
+
+    private void report(Progress progress) {
+        LOG.info("{}", progress);
+        try {
+            progressListener.accept(progress);
+        } catch (RuntimeException e) {
+            LOG.warn("progress listener failed: {}", e.toString());
+        }
+    }
+
+    /**
+     * Progress of the analysis of a batch.
+     */
+    public static final class Progress {
+        private final CheckpointStore.PendingBatch batch;
+        private final long total;
+        private final long startNanos;
+        private final long analysed;
+        private final long elapsedMillis;
+        private final boolean finished;
+
+        Progress(CheckpointStore.PendingBatch batch, long total) {
+            this(batch, total, System.nanoTime(), 0, 0, false);
+        }
+
+        private Progress(CheckpointStore.PendingBatch batch, long total, long startNanos, long analysed,
+                         long elapsedMillis, boolean finished) {
+            this.batch = batch;
+            this.total = total;
+            this.startNanos = startNanos;
+            this.analysed = analysed;
+            this.elapsedMillis = elapsedMillis;
+            this.finished = finished;
+        }
+
+        Progress at(long n, boolean done) {
+            return new Progress(batch, total, startNanos, n, (System.nanoTime() - startNanos) / 1_000_000, done);
+        }
+
+        public CheckpointStore.PendingBatch getBatch() {
+            return batch;
+        }
+
+        /** @return member records of the batch range (counted when the analysis started) */
+        public long getTotal() {
+            return total;
+        }
+
+        public long getAnalysed() {
+            return analysed;
+        }
+
+        public long getElapsedMillis() {
+            return elapsedMillis;
+        }
+
+        public boolean isFinished() {
+            return finished;
+        }
+
+        /** @return records per second so far */
+        public double getRate() {
+            return elapsedMillis == 0 ? 0 : analysed * 1000.0 / elapsedMillis;
+        }
+
+        @Override
+        public String toString() {
+            double rate = getRate();
+            long remaining = Math.max(0, total - analysed);
+            String eta = finished ? "0s" : rate <= 0 ? "-" : Math.round(remaining / rate) + "s";
+            return String.format("PROGRESS %s [%s, %s) analysed=%d/%d (%.1f%%) rate=%.0f/s elapsed=%ds eta=%s%s",
+                    batch.getKind(), batch.getRangeStart(), batch.getRangeEnd(), analysed, total,
+                    total == 0 ? 100.0 : Math.min(100.0, analysed * 100.0 / total), rate, elapsedMillis / 1000, eta,
+                    finished ? " done" : "");
         }
     }
 
@@ -876,6 +1187,10 @@ public final class AuditLogSyncPipeline implements AutoCloseable {
 
     private static LocalDateTime max(LocalDateTime a, LocalDateTime b) {
         return a.isAfter(b) ? a : b;
+    }
+
+    private static LocalDateTime min(LocalDateTime a, LocalDateTime b) {
+        return a.isBefore(b) ? a : b;
     }
 
     private static String describe(Throwable e) {

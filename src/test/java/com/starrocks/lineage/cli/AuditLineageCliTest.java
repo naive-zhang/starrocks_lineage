@@ -39,6 +39,10 @@ class AuditLineageCliTest {
         assertEquals(AuditLineageCli.USAGE, run(env, "deploy"));
         assertTrue(out[0].contains("unknown command 'deploy'"), out[0]);
         assertEquals(AuditLineageCli.USAGE, run(env, "--config", "/no/such/file", "check"));
+        assertEquals(AuditLineageCli.USAGE, run(env, "--threads", "0", "rebuild", "2026-11-01", "2026-11-02"));
+        assertTrue(out[0].contains("THREADS must be > 0"), "--threads overrides THREADS: " + out[0]);
+        assertEquals(AuditLineageCli.USAGE, run(env, "rebuild", "2026-11-01", "2026-11-02", "--threads=abc"));
+        assertTrue(out[0].contains("THREADS is not a number"), out[0]);
     }
 
     @Test

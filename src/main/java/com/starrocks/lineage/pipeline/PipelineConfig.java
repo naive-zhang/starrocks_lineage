@@ -23,6 +23,8 @@ public final class PipelineConfig {
     private final int alertAfterAttempts;
     private final Duration leaseTtl;
     private final int analyzerThreads;
+    private final int readThreads;
+    private final Duration progressInterval;
     private final LocalDateTime initialStart;
 
     private PipelineConfig(Builder b) {
@@ -31,9 +33,10 @@ public final class PipelineConfig {
         if (b.pageSize < 1 || b.maxRecordsPerBatch < b.pageSize) {
             throw new IllegalArgumentException("need 1 <= pageSize <= maxRecordsPerBatch");
         }
-        if (b.analyzerThreads < 1) {
-            throw new IllegalArgumentException("analyzerThreads must be >= 1");
+        if (b.analyzerThreads < 1 || b.readThreads < 1) {
+            throw new IllegalArgumentException("analyzerThreads and readThreads must be >= 1");
         }
+        requirePositive(b.progressInterval, "progressInterval");
         if (b.alertAfterAttempts < 1 || b.maxEmptySlicesPerBatch < 1) {
             throw new IllegalArgumentException("alertAfterAttempts and maxEmptySlicesPerBatch must be >= 1");
         }
@@ -60,6 +63,8 @@ public final class PipelineConfig {
         this.alertAfterAttempts = b.alertAfterAttempts;
         this.leaseTtl = b.leaseTtl;
         this.analyzerThreads = b.analyzerThreads;
+        this.readThreads = b.readThreads;
+        this.progressInterval = b.progressInterval;
         this.initialStart = alignToSlice(Objects.requireNonNull(b.initialStart, "initialStart"), b.sliceSize);
     }
 
@@ -150,6 +155,16 @@ public final class PipelineConfig {
         return analyzerThreads;
     }
 
+    /** @return parallel readers of a rebuild (each reads its own time windows of the hour) */
+    public int getReadThreads() {
+        return readThreads;
+    }
+
+    /** @return how often a long batch (a rebuild hour) logs its progress */
+    public Duration getProgressInterval() {
+        return progressInterval;
+    }
+
     /** @return start of the coverage when no checkpoint exists yet, aligned to a slice boundary */
     public LocalDateTime getInitialStart() {
         return initialStart;
@@ -174,6 +189,8 @@ public final class PipelineConfig {
         private int alertAfterAttempts = 5;
         private Duration leaseTtl = Duration.ofMinutes(10);
         private int analyzerThreads = Runtime.getRuntime().availableProcessors();
+        private int readThreads = 2;
+        private Duration progressInterval = Duration.ofSeconds(30);
         private LocalDateTime initialStart = LocalDateTime.now().truncatedTo(ChronoUnit.DAYS).minusDays(1);
 
         private Builder(String pipelineName, String owner) {
@@ -233,6 +250,16 @@ public final class PipelineConfig {
 
         public Builder analyzerThreads(int v) {
             this.analyzerThreads = v;
+            return this;
+        }
+
+        public Builder readThreads(int v) {
+            this.readThreads = v;
+            return this;
+        }
+
+        public Builder progressInterval(Duration v) {
+            this.progressInterval = Objects.requireNonNull(v);
             return this;
         }
 

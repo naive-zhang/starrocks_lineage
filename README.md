@@ -56,6 +56,7 @@ See [docs/container-verification.md](docs/container-verification.md) for what th
 | 6 | Acceptance on 30 production INSERT statements with the full production schema (997 tables), cross-checked on StarRocks 3.1.17; Stream Load routing fix for large loads | ✅ [docs/stage6-production-inserts.md](docs/stage6-production-inserts.md) |
 | 7 | Standalone jar (`java -jar ... check / analyze / run / daemon / status / ...`) for production | ✅ [docs/stage7-standalone-jar.md](docs/stage7-standalone-jar.md), deployment: [docs/production-deployment.md](docs/production-deployment.md) |
 | 8 | Production `analyze` findings: `ORDER BY t.alias` (qualified select alias), view / materialized view grants | ✅ [docs/stage8-production-analyze.md](docs/stage8-production-analyze.md) |
+| 9 | Production `rebuild`: chunked batch lineage loads (BE 100 MB limit), hourly REBUILD batches chained per day, resumable, parallel readers, progress, `--threads` | ✅ [docs/stage9-rebuild-chunks.md](docs/stage9-rebuild-chunks.md) |
 
 ## Running the pipeline
 

@@ -58,7 +58,11 @@ public final class AuditLineageCli {
             "  redo | mark-done           resolve a batch BLOCKED on an unknown load label",
             "  skip <reason>              give the pending batch up (recorded as a BATCH_SKIPPED dead letter)",
             "  repair <from> <to> [limit] re-analyse OPEN dead letters with audit time in [from, to)",
-            "  rebuild <fromDay> <toDay>  recompute whole days [fromDay, toDay) from the batch membership",
+            "  rebuild <fromDay> <toDay>  recompute whole days [fromDay, toDay) from the batch membership, one",
+            "                             batch per hour; prints every hour and PROGRESS lines; running it again",
+            "                             resumes an interrupted rebuild",
+            "",
+            "Options: --config <file>, --threads <n> (analysis threads, overrides THREADS).",
             "",
             "Times are 'yyyy-MM-dd HH:mm:ss' (days: 'yyyy-MM-dd'). Configuration: environment variables or the",
             "--config properties file (environment wins). Keys and defaults:",
@@ -87,6 +91,7 @@ public final class AuditLineageCli {
     static int run(String[] args, Map<String, String> env, PrintStream out) {
         String command = null;
         Path configFile = null;
+        String threads = null;
         List<String> positional = new ArrayList<>();
         for (int i = 0; i < args.length; i++) {
             String a = args[i];
@@ -94,6 +99,10 @@ public final class AuditLineageCli {
                 configFile = Paths.get(args[++i]);
             } else if (a.startsWith("--config=")) {
                 configFile = Paths.get(a.substring("--config=".length()));
+            } else if (a.equals("--threads") && i + 1 < args.length) {
+                threads = args[++i];
+            } else if (a.startsWith("--threads=")) {
+                threads = a.substring("--threads=".length());
             } else if (a.equals("-h") || a.equals("--help") || a.equals("help")) {
                 out.println(HELP);
                 return OK;
@@ -109,6 +118,12 @@ public final class AuditLineageCli {
         }
         CliConfig config;
         try {
+            if (threads != null) {
+                // the command line wins over the environment and the file
+                Map<String, String> withThreads = new java.util.HashMap<>(env);
+                withThreads.put("THREADS", threads);
+                env = withThreads;
+            }
             config = CliConfig.load(env, configFile);
         } catch (IllegalArgumentException e) {
             out.println("CONFIG ERROR " + e.getMessage());
@@ -312,7 +327,16 @@ public final class AuditLineageCli {
                     break;
                 default:
                     require(args, 2, "rebuild <fromDay> <toDay>");
-                    report = r.pipeline.rebuild(time(args.get(0)), time(args.get(1)));
+                    long t0 = System.nanoTime();
+                    out.println("REBUILD [" + args.get(0) + ", " + args.get(1) + ") threads=" + config.get("THREADS")
+                            + " read_threads=" + config.get("REBUILD_READ_THREADS"));
+                    report = r.pipeline.rebuild(time(args.get(0)), time(args.get(1)), (hour, done, total) -> {
+                        long elapsed = (System.nanoTime() - t0) / 1_000_000_000L;
+                        long eta = done == 0 ? 0 : elapsed * (total - done) / done;
+                        out.println("REBUILD hour " + done + "/" + total + " elapsed=" + elapsed + "s eta=" + eta
+                                + "s " + describe(hour));
+                        out.flush();
+                    });
                     break;
             }
             out.println("OPERATION " + command + " " + (report == null ? "outcome=DONE" : describe(report)));
@@ -337,7 +361,8 @@ public final class AuditLineageCli {
             this.streamLoad = config.streamLoad();
             JdbcStarRocksMetadataProvider metadata = new JdbcStarRocksMetadataProvider(ds);
             this.pipeline = new AuditLogSyncPipeline(config.pipelineConfig(LocalDateTime.now()), source(ds, config),
-                    checkpoints(ds, config), new StarRocksSink(ds, streamLoad, config.lineageDb(), config.pipeline()),
+                    checkpoints(ds, config), new StarRocksSink(ds, streamLoad, config.lineageDb(), config.pipeline(),
+                            Clock.systemDefaultZone(), config.loadChunkBytes(), config.loadMaxBytes()),
                     new StarRocksSqlAnalyzer(metadata), metadata, Clock.systemDefaultZone());
         }
 
